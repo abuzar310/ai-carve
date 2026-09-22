@@ -17,3 +17,5 @@ pnpm install
 pnpm dev          # http://localhost:3030
 pnpm check
 ```
+
+Vercel: import `abuzar310/ai-carve`. The site is a static Vite app; Generate goes through `/api/imagine` (60s). Depth, STL, and `carve.nc` are built in the browser, so they work without a database. "Write pen drive" needs Chrome/Edge on HTTPS (Vercel is HTTPS).

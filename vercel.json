@@ -1,0 +1,6 @@
+{
+  "framework": "vite",
+  "functions": {
+    "api/imagine.ts": { "maxDuration": 60 }
+  }
+}

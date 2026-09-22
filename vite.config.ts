@@ -6,11 +6,15 @@ export default defineConfig({
   server: {
     port: 3030,
     proxy: {
-      // Avoid browser CORS on the free image host.
-      "/imagine": {
+      "/api/imagine": {
         target: "https://image.pollinations.ai",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/imagine/, "/prompt"),
+        rewrite: (path) => {
+          const q = new URL(path, "http://vite.local").searchParams;
+          const prompt = q.get("prompt") || "wood carving";
+          const seed = q.get("seed") || "1";
+          return "/prompt/" + encodeURIComponent(prompt) + "?width=768&height=768&nologo=true&seed=" + seed;
+        },
       },
     },
   },

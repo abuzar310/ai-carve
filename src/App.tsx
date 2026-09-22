@@ -55,11 +55,11 @@ export default function App() {
     setNote("");
     setBusy("Drawing");
     try {
-      const q = encodeURIComponent(prompt.trim() + BIAS);
+      const text = prompt.trim() + BIAS;
       const seed = Date.now() % 99999;
       const urls = [
-        `/imagine/${q}?width=768&height=768&nologo=true&seed=${seed}`,
-        `https://image.pollinations.ai/prompt/${q}?width=768&height=768&nologo=true&seed=${seed}`,
+        `/api/imagine?prompt=${encodeURIComponent(text)}&seed=${seed}`,
+        `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?width=768&height=768&nologo=true&seed=${seed}`,
       ];
       let blob: Blob | null = null;
       let last = "Generate failed";
