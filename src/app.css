@@ -1,0 +1,75 @@
+:root {
+  --mdf: #b7a888;
+  --table: #2f2a22;
+  --rail: #c5cdc8;
+  --copper: #c56a2c;
+  --ink: #1a1610;
+  --dust: #efe6d4;
+  --mute: #6d6454;
+  --disp: "Khand", sans-serif;
+  --ui: "IBM Plex Sans", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box }
+html, body, #root { margin: 0; min-height: 100% }
+body {
+  background: var(--mdf);
+  background-image: radial-gradient(#00000014 0.7px, transparent 0.7px);
+  background-size: 5px 5px;
+  color: var(--ink);
+  font-family: var(--ui);
+}
+button, input, textarea { font: inherit }
+button { cursor: pointer }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px }
+
+.shell { max-width: 1180px; margin: 0 auto; padding: 28px 20px 72px }
+.head { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 22px }
+.head h1 { margin: 0; font-family: var(--disp); font-size: 52px; font-weight: 600; letter-spacing: .02em; line-height: .9 }
+.head p { margin: 6px 0 0; max-width: 28em; color: var(--mute) }
+.badge { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--table) }
+
+.strip {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0;
+  border: 1px solid var(--table); background: var(--dust); min-height: 280px;
+}
+.cell { position: relative; border-right: 1px solid var(--table); min-height: 280px; overflow: hidden }
+.cell:last-child { border-right: 0 }
+.cell img, .cell canvas { width: 100%; height: 100%; object-fit: contain; display: block; background: #1c1914 }
+.tag {
+  position: absolute; left: 10px; top: 10px; z-index: 1;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  background: var(--dust); color: var(--ink); padding: 3px 7px;
+}
+.ph { display: grid; place-items: center; height: 100%; color: var(--mute); padding: 24px; text-align: center }
+
+.form { margin-top: 18px; display: grid; gap: 12px }
+.ask { display: grid; grid-template-columns: 1fr auto auto; gap: 8px }
+@media (max-width: 760px) {
+  .strip { grid-template-columns: 1fr }
+  .cell { border-right: 0; border-bottom: 1px solid var(--table) }
+  .ask { grid-template-columns: 1fr }
+  .head h1 { font-size: 40px }
+}
+textarea {
+  width: 100%; min-height: 64px; resize: vertical; padding: 10px 12px;
+  border: 1px solid var(--table); background: var(--dust);
+}
+.go, .ghost {
+  padding: 0 16px; height: 64px; border: 1px solid var(--table);
+}
+.go { background: var(--copper); color: #fff; font-family: var(--disp); font-size: 22px; letter-spacing: .04em }
+.go:disabled { opacity: .5; cursor: wait }
+.ghost { background: var(--dust) }
+
+.knobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px }
+label { display: grid; gap: 4px; font-size: 12px; color: var(--mute) }
+input[type="number"], input[type="text"] { padding: 8px; border: 1px solid var(--table); background: var(--dust) }
+.check { display: flex; align-items: center; gap: 8px; height: 38px; color: var(--ink) }
+
+.out { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px }
+.out button { height: 42px; padding: 0 14px; background: var(--table); color: var(--dust); border: 0; font-family: var(--mono); font-size: 13px }
+.err { color: #8a2010; font-family: var(--mono); font-size: 13px }
+.ok { color: #2c4a22; font-family: var(--mono); font-size: 13px }
+.foot { margin-top: 28px; color: var(--mute); font-size: 13px; max-width: 42em }
