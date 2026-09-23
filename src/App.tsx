@@ -23,13 +23,22 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+type DirPicker = () => Promise<{
+  getFileHandle: (n: string, o?: { create?: boolean }) => Promise<{
+    createWritable: () => Promise<{ write: (d: BufferSource | Blob | string) => Promise<void>; close: () => Promise<void> }>;
+  }>;
+}>;
+
 export default function App() {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
-  const [pic, setPic] = useState<string>("");
+  const [pic, setPic] = useState("");
   const [invert, setInvert] = useState(false);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
+  const [over, setOver] = useState(false);
+  const [cutPass, setCutPass] = useState(0);
+  const [canDrive, setCanDrive] = useState(false);
   const [grid, setGrid] = useState<{ height: Float32Array; cols: number; rows: number } | null>(null);
   const [cut, setCut] = useState<Cut>({
     widthMm: 200,
@@ -44,10 +53,24 @@ export default function App() {
   const path = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setCanDrive(typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === "function");
+  }, []);
+
+  useEffect(() => {
+    if (!err && !note) return;
+    const t = window.setTimeout(() => {
+      setErr("");
+      setNote("");
+    }, 5000);
+    return () => window.clearTimeout(t);
+  }, [err, note]);
+
   async function fromImage(src: string) {
     const img = await loadImage(src);
     const next = await rasterFromImage(img, 160, invert);
     setGrid(next);
+    setCutPass((n) => n + 1);
   }
 
   async function generate() {
@@ -105,7 +128,7 @@ export default function App() {
   useEffect(() => {
     if (!pic) return;
     fromImage(pic).catch((e) => setErr(e instanceof Error ? e.message : "Read failed"));
-    // invert is the only rebuild trigger besides a new picture
+    // invert rebuilds depth from the same picture
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invert]);
 
@@ -126,9 +149,9 @@ export default function App() {
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.fillStyle = "#1c1914";
+    ctx.fillStyle = "#10140f";
     ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = "#c56a2c";
+    ctx.strokeStyle = "#d78900";
     ctx.lineWidth = 1;
     const rows = 36;
     for (let iy = 0; iy <= rows; iy++) {
@@ -148,39 +171,34 @@ export default function App() {
   }, [grid]);
 
   const ready = !!grid;
-
   const files = useMemo(() => {
     if (!grid) return null;
-    const nc = reliefGcode(grid.height, grid.cols, grid.rows, cut);
-    const stl = reliefStl(grid.height, grid.cols, grid.rows, cut.widthMm, cut.heightMm, cut.depthMm);
-    return { nc, stl };
+    return {
+      nc: reliefGcode(grid.height, grid.cols, grid.rows, cut),
+      stl: reliefStl(grid.height, grid.cols, grid.rows, cut.widthMm, cut.heightMm, cut.depthMm),
+    };
   }, [grid, cut]);
 
   function saveNc() {
     if (!files) return;
     download("carve.nc", files.nc, "text/plain");
-    setNote("carve.nc — copy onto the pen drive and load it on the machine.");
+    setNote("carve.nc downloaded. Copy it onto the pen drive.");
   }
-
   function saveStl() {
     if (!files) return;
     download("relief.stl", files.stl, "model/stl");
     setNote("relief.stl — open in ArtCAM if you still want their toolpath.");
   }
-
   function saveHeight() {
-    const canvas = depth.current;
-    if (!canvas) return;
-    canvas.toBlob((blob) => {
+    depth.current?.toBlob((blob) => {
       if (!blob) return;
       download("height.png", blob, "image/png");
       setNote("height.png — ArtCAM can read this as a relief bitmap.");
     });
   }
-
   async function writeDrive() {
     if (!files) return;
-    const pick = (window as unknown as { showDirectoryPicker?: () => Promise<{ getFileHandle: (n: string, o?: { create?: boolean }) => Promise<{ createWritable: () => Promise<{ write: (d: BufferSource | Blob | string) => Promise<void>; close: () => Promise<void> }> }> }> }).showDirectoryPicker;
+    const pick = (window as unknown as { showDirectoryPicker?: DirPicker }).showDirectoryPicker;
     if (!pick) {
       saveNc();
       return;
@@ -191,13 +209,12 @@ export default function App() {
       const out = await handle.createWritable();
       await out.write(files.nc);
       await out.close();
-      setNote("Wrote carve.nc onto the drive. Take the stick to the machine.");
+      setNote("Wrote carve.nc onto the drive.");
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setErr(e instanceof Error ? e.message : "Drive write failed");
     }
   }
-
   function setNum(key: keyof Cut, raw: string) {
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return;
@@ -206,32 +223,65 @@ export default function App() {
 
   return (
     <div className="shell">
-      <header className="head">
+      <header className="rail">
         <div>
-          <div className="badge">Picture → relief → stick</div>
+          <div className="mark">Picture · relief · stick</div>
           <h1>Carve</h1>
-          <p>Make the picture. Turn it into a 3D relief. Get a file the CNC will run — no bought design, no ArtCAM unless you want it.</p>
+          <p className="lede">Type what you want in the wood. Get a file the CNC will run.</p>
+        </div>
+        <div className={"spindle" + (busy ? " run" : " idle")} aria-live="polite">
+          <i />
+          {busy || (ready ? "Ready" : "Idle")}
         </div>
       </header>
 
-      <div className="strip" aria-label="Picture, depth, toolpath">
-        <div className="cell">
-          <span className="tag">1 Picture</span>
-          {pic ? <img src={pic} alt="Generated or loaded design" /> : <div className="ph">Generate or drop a photo</div>}
+      <div
+        className={"strip" + (cutPass ? " cut" : "")}
+        aria-label="Picture, depth, toolpath"
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          const f = e.dataTransfer.files[0];
+          if (f) void onFile(f);
+        }}
+      >
+        <span key={cutPass} className="bit" aria-hidden />
+        <div className={"cell" + (pic ? " has-art" : "") + (over ? " drop" : "") + (busy && !pic ? " busy" : "")}>
+          <span className="tag">Picture</span>
+          {pic ? <img key={pic} src={pic} alt="Design to carve" /> : <div className="ph">{busy ? "Drawing…" : "Generate, drop a photo, or pick one"}</div>}
         </div>
-        <div className="cell">
-          <span className="tag">2 Depth</span>
-          {grid ? <canvas ref={depth} /> : <div className="ph">White stays high. Dark is the cut.</div>}
+        <div className={"cell" + (grid ? " has-art" : "") + (busy ? " busy" : "")}>
+          <span className="tag">Depth</span>
+          {grid ? <canvas key={"d" + cutPass} ref={depth} /> : <div className="ph">{busy ? "Reading height…" : "White stays high. Dark is the cut."}</div>}
         </div>
-        <div className="cell">
-          <span className="tag">3 Toolpath</span>
-          {grid ? <canvas ref={path} /> : <div className="ph">Raster path the machine will follow</div>}
+        <div className={"cell" + (grid ? " has-art" : "") + (busy ? " busy" : "")}>
+          <span className="tag">Path</span>
+          {grid ? <canvas key={"p" + cutPass} ref={path} /> : <div className="ph">{busy ? "Plotting…" : "Raster the machine will follow"}</div>}
         </div>
       </div>
+      <div className={"bar" + (busy ? " on" : "")} aria-hidden>
+        <i />
+      </div>
 
-      <div className="form">
+      <div className="bench">
         <div className="ask">
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="What to carve" />
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="What to carve"
+            aria-label="What to carve"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) {
+                e.preventDefault();
+                void generate();
+              }
+            }}
+          />
           <button className="go" disabled={!!busy} onClick={() => void generate()}>
             {busy || "Generate"}
           </button>
@@ -254,27 +304,27 @@ export default function App() {
         <div className="knobs">
           <label>
             Width mm
-            <input type="number" value={cut.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
+            <input type="number" inputMode="decimal" value={cut.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
           </label>
           <label>
             Height mm
-            <input type="number" value={cut.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
+            <input type="number" inputMode="decimal" value={cut.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
           </label>
           <label>
             Depth mm
-            <input type="number" value={cut.depthMm} step={0.1} onChange={(e) => setNum("depthMm", e.target.value)} />
+            <input type="number" inputMode="decimal" value={cut.depthMm} step={0.1} onChange={(e) => setNum("depthMm", e.target.value)} />
           </label>
           <label>
             Stepover mm
-            <input type="number" value={cut.stepMm} step={0.1} onChange={(e) => setNum("stepMm", e.target.value)} />
+            <input type="number" inputMode="decimal" value={cut.stepMm} step={0.1} onChange={(e) => setNum("stepMm", e.target.value)} />
           </label>
           <label>
             Feed
-            <input type="number" value={cut.feed} onChange={(e) => setNum("feed", e.target.value)} />
+            <input type="number" inputMode="decimal" value={cut.feed} onChange={(e) => setNum("feed", e.target.value)} />
           </label>
           <label>
             Safe Z
-            <input type="number" value={cut.safeZ} onChange={(e) => setNum("safeZ", e.target.value)} />
+            <input type="number" inputMode="decimal" value={cut.safeZ} onChange={(e) => setNum("safeZ", e.target.value)} />
           </label>
           <label className="check">
             <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
@@ -283,28 +333,29 @@ export default function App() {
         </div>
 
         <div className="out">
-          <button disabled={!ready} onClick={saveNc}>
+          <button className="pri" disabled={!ready} onClick={saveNc}>
             Download carve.nc
           </button>
-          <button disabled={!ready} onClick={() => void writeDrive()}>
-            Write pen drive
+          {canDrive ? (
+            <button className="pri" disabled={!ready} onClick={() => void writeDrive()}>
+              Write pen drive
+            </button>
+          ) : null}
+          <button className="sec" disabled={!ready} onClick={saveStl}>
+            relief.stl
           </button>
-          <button disabled={!ready} onClick={saveStl}>
-            Download relief.stl
-          </button>
-          <button disabled={!ready} onClick={saveHeight}>
-            Download height.png
+          <button className="sec" disabled={!ready} onClick={saveHeight}>
+            height.png
           </button>
         </div>
-        {err ? <p className="err">{err}</p> : null}
-        {note ? <p className="ok">{note}</p> : null}
+        <p className={"toast" + (err ? " on err" : note ? " on ok" : "")} role="status">
+          {err || note}
+        </p>
+        <p className="foot">
+          2.5D relief: one picture becomes height, then a raster path. Put <code>carve.nc</code> on the stick. Dry-run
+          above the board before the first real cut.
+        </p>
       </div>
-
-      <p className="foot">
-        This is a 2.5D relief, the same idea as ArtCAM: one picture becomes height, then a raster toolpath. Put
-        <code> carve.nc </code> on the pen drive. If the machine still wants ArtCAM, use the STL or the height bitmap.
-        Always dry-run above the wood — feeds and bit size are yours to check.
-      </p>
     </div>
   );
 }
