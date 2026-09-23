@@ -1,4 +1,4 @@
-import { luma, pixelsToHeight } from "./height.ts";
+import { luma, normalizeHeight, pixelsToHeight } from "./height.ts";
 
 let n = 0;
 const ok = (cond: boolean, msg: string) => {
@@ -12,5 +12,8 @@ const px = new Uint8ClampedArray([255, 255, 255, 255, 0, 0, 0, 255]);
 const h = pixelsToHeight(px, false);
 ok(h[0] === 1 && h[1] === 0, "white stays high");
 ok(pixelsToHeight(px, true)[0] === 0, "invert makes white deep");
+const mid = new Float32Array([0.2, 0.6]);
+const nrm = normalizeHeight(mid);
+ok(Math.abs(nrm[0]) < 1e-6 && Math.abs(nrm[1] - 1) < 1e-6, "normalize stretches to 0..1");
 
 console.log(`carve height.check OK (${n} assertions)`);

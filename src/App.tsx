@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { reliefGcode, type Cut } from "./lib/gcode";
-import { heightToImageData, rasterFromImage } from "./lib/height";
+import { reliefGcode, stepOf, type Cut } from "./lib/gcode";
+import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
 import { reliefStl } from "./lib/stl";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
@@ -33,6 +33,7 @@ export default function App() {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
   const [pic, setPic] = useState("");
   const [invert, setInvert] = useState(false);
+  const [normalize, setNormalize] = useState(true);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
@@ -44,10 +45,15 @@ export default function App() {
     widthMm: 200,
     heightMm: 200,
     depthMm: 4,
-    stepMm: 1.2,
+    bitMm: 6,
+    stepPct: 20,
     safeZ: 8,
     feed: 800,
     plunge: 200,
+    spindle: 18000,
+    passMm: 1.5,
+    cross: false,
+    stockMm: 18,
   });
   const depth = useRef<HTMLCanvasElement>(null);
   const path = useRef<HTMLCanvasElement>(null);
@@ -68,8 +74,8 @@ export default function App() {
 
   async function fromImage(src: string) {
     const img = await loadImage(src);
-    const next = await rasterFromImage(img, 160, invert);
-    setGrid(next);
+    const next = await rasterFromImage(img, 220, invert);
+    setGrid({ ...next, height: normalize ? normalizeHeight(next.height) : next.height });
     setCutPass((n) => n + 1);
   }
 
@@ -128,9 +134,9 @@ export default function App() {
   useEffect(() => {
     if (!pic) return;
     fromImage(pic).catch((e) => setErr(e instanceof Error ? e.message : "Read failed"));
-    // invert rebuilds depth from the same picture
+    // invert / normalize rebuilds depth from the same picture
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invert]);
+  }, [invert, normalize]);
 
   useEffect(() => {
     const canvas = depth.current;
@@ -153,7 +159,7 @@ export default function App() {
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "#d78900";
     ctx.lineWidth = 1;
-    const rows = 36;
+    const rows = Math.min(48, Math.max(16, Math.round(cut.heightMm / Math.max(stepOf(cut), 0.4))));
     for (let iy = 0; iy <= rows; iy++) {
       ctx.beginPath();
       for (let ix = 0; ix <= 80; ix++) {
@@ -168,7 +174,7 @@ export default function App() {
       }
       ctx.stroke();
     }
-  }, [grid]);
+  }, [grid, cut]);
 
   const ready = !!grid;
   const files = useMemo(() => {
@@ -179,10 +185,18 @@ export default function App() {
     };
   }, [grid, cut]);
 
+  function stockWarn() {
+    return cut.depthMm >= cut.stockMm ? " Depth is at or through the stock — check thickness." : "";
+  }
   function saveNc() {
     if (!files) return;
     download("carve.nc", files.nc, "text/plain");
-    setNote("carve.nc downloaded. Copy it onto the pen drive.");
+    setNote("carve.nc downloaded. Copy it onto the pen drive." + stockWarn());
+  }
+  function saveTap() {
+    if (!files) return;
+    download("carve.tap", files.nc, "text/plain");
+    setNote("carve.tap downloaded (same path, Mach3 name)." + stockWarn());
   }
   function saveStl() {
     if (!files) return;
@@ -209,7 +223,7 @@ export default function App() {
       const out = await handle.createWritable();
       await out.write(files.nc);
       await out.close();
-      setNote("Wrote carve.nc onto the drive.");
+      setNote("Wrote carve.nc onto the drive." + stockWarn());
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setErr(e instanceof Error ? e.message : "Drive write failed");
@@ -315,20 +329,48 @@ export default function App() {
             <input type="number" inputMode="decimal" value={cut.depthMm} step={0.1} onChange={(e) => setNum("depthMm", e.target.value)} />
           </label>
           <label>
-            Stepover mm
-            <input type="number" inputMode="decimal" value={cut.stepMm} step={0.1} onChange={(e) => setNum("stepMm", e.target.value)} />
+            Stock mm
+            <input type="number" inputMode="decimal" value={cut.stockMm} onChange={(e) => setNum("stockMm", e.target.value)} />
           </label>
           <label>
-            Feed
+            Bit mm
+            <input type="number" inputMode="decimal" value={cut.bitMm} step={0.1} onChange={(e) => setNum("bitMm", e.target.value)} />
+          </label>
+          <label>
+            Stepover % of bit
+            <input type="number" inputMode="decimal" value={cut.stepPct} onChange={(e) => setNum("stepPct", e.target.value)} />
+          </label>
+          <label>
+            Pass mm
+            <input type="number" inputMode="decimal" value={cut.passMm} step={0.1} onChange={(e) => setNum("passMm", e.target.value)} />
+          </label>
+          <label>
+            Feed mm/min
             <input type="number" inputMode="decimal" value={cut.feed} onChange={(e) => setNum("feed", e.target.value)} />
           </label>
           <label>
-            Safe Z
+            Plunge mm/min
+            <input type="number" inputMode="decimal" value={cut.plunge} onChange={(e) => setNum("plunge", e.target.value)} />
+          </label>
+          <label>
+            Spindle RPM
+            <input type="number" inputMode="decimal" value={cut.spindle} onChange={(e) => setNum("spindle", e.target.value)} />
+          </label>
+          <label>
+            Safe Z mm
             <input type="number" inputMode="decimal" value={cut.safeZ} onChange={(e) => setNum("safeZ", e.target.value)} />
           </label>
           <label className="check">
             <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
             Invert depth
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />
+            Normalize
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={cut.cross} onChange={(e) => setCut((c) => ({ ...c, cross: e.target.checked }))} />
+            Also cut across
           </label>
         </div>
 
@@ -341,6 +383,9 @@ export default function App() {
               Write pen drive
             </button>
           ) : null}
+          <button className="sec" disabled={!ready} onClick={saveTap}>
+            carve.tap
+          </button>
           <button className="sec" disabled={!ready} onClick={saveStl}>
             relief.stl
           </button>
@@ -352,8 +397,8 @@ export default function App() {
           {err || note}
         </p>
         <p className="foot">
-          2.5D relief: one picture becomes height, then a raster path. Put <code>carve.nc</code> on the stick. Dry-run
-          above the board before the first real cut.
+          Z0 is the top of the board. Stepover is {stepOf(cut).toFixed(2)} mm ({cut.stepPct}% of a {cut.bitMm} mm
+          bit). Put <code>carve.nc</code> on the stick. Dry-run above the board before the first real cut.
         </p>
       </div>
     </div>

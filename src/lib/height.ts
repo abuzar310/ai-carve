@@ -13,6 +13,21 @@ export function pixelsToHeight(data: Uint8ClampedArray, invert: boolean): Float3
   return out;
 }
 
+/** Stretch the height field so the darkest pixel is 0 and the lightest is 1. LinuxCNC image-to-gcode "Normalize". */
+export function normalizeHeight(h: Float32Array): Float32Array {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of h) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  if (!(hi > lo)) return h;
+  const out = new Float32Array(h.length);
+  const d = hi - lo;
+  for (let i = 0; i < h.length; i++) out[i] = (h[i] - lo) / d;
+  return out;
+}
+
 export function sampleHeight(h: Float32Array, cols: number, rows: number, x: number, y: number): number {
   const c = Math.min(cols - 1, Math.max(0, Math.round(x)));
   const r = Math.min(rows - 1, Math.max(0, Math.round(y)));
