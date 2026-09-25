@@ -6,6 +6,13 @@ export const RLF_MM_PER_PX = 0.4;
 const RLF_RANGE_U = 32320;
 const MAGIC = [0x87, 0x65, 0x43, 0x21] as const;
 const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+/** Empty 120-byte trailer record copied from a shop file ArtCAM does open. */
+const FOOT = hex(
+  "ffffffffffffffffffffffffffffffffffffffff" +
+    "000000000000000000000000000000000000000000000000000000000000000000000000" +
+    "000038380000000000000000000000000000000000000000000000000000000000000000" +
+    "000000ffffffffffffffffffffffffffffffffffffffffff",
+);
 
 export type RlfInfo = {
   cols: number;
@@ -21,12 +28,22 @@ export type RlfInfo = {
   payloadAt: number;
 };
 
-export function rlfRasterCols(widthMm: number, imgW: number, imgH: number, maxPx = 1200): number {
+export function rlfGrid(widthMm: number, heightMm: number, maxPx = 1200): { cols: number; rows: number } {
   let cols = Math.max(8, Math.round(widthMm / RLF_MM_PER_PX));
-  const rows = Math.max(8, Math.round((cols * Math.max(imgH, 1)) / Math.max(imgW, 1)));
+  let rows = Math.max(8, Math.round(heightMm / RLF_MM_PER_PX));
   const m = Math.max(cols, rows);
-  if (m > maxPx) cols = Math.max(8, Math.round((cols * maxPx) / m));
-  return cols;
+  if (m > maxPx) {
+    const s = maxPx / m;
+    cols = Math.max(8, Math.round(cols * s));
+    rows = Math.max(8, Math.round(rows * s));
+  }
+  return { cols, rows };
+}
+
+function hex(s: string): Uint8Array {
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  return out;
 }
 
 function stamp(d = new Date()): string {
@@ -53,16 +70,70 @@ function u16be(n: number): number[] {
   return [(n >> 8) & 0xff, n & 0xff];
 }
 
-function i16be(n: number): number[] {
-  const v = n & 0xffff;
-  return [(v >> 8) & 0xff, v & 0xff];
-}
-
 function fmt2(n: number): string {
   return n.toFixed(2);
 }
 function fmt3(n: number): string {
   return n.toFixed(3);
+}
+
+function i16beBytes(v: number): [number, number] {
+  const u = v & 0xffff;
+  return [(u >> 8) & 0xff, u & 0xff];
+}
+
+/** TGA-style 16-bit RLE, big-endian samples (0.001 mm). */
+export function packRlfHeights(u: Int16Array): Uint8Array {
+  const out: number[] = [];
+  let i = 0;
+  while (i < u.length) {
+    let j = i + 1;
+    while (j < u.length && j - i < 128 && u[j] === u[i]) j++;
+    const run = j - i;
+    if (run >= 3) {
+      out.push(0x80 | (run - 1), ...i16beBytes(u[i] ?? 0));
+      i = j;
+      continue;
+    }
+    let k = i;
+    while (k < u.length && k - i < 128) {
+      if (k + 2 < u.length && u[k] === u[k + 1] && u[k] === u[k + 2]) break;
+      k++;
+    }
+    if (k === i) k = i + 1;
+    const n = k - i;
+    out.push(n - 1);
+    for (let t = 0; t < n; t++) out.push(...i16beBytes(u[i + t] ?? 0));
+    i = k;
+  }
+  return Uint8Array.from(out);
+}
+
+export function unpackRlfHeights(buf: Uint8Array, need: number): Int16Array {
+  const out = new Int16Array(need);
+  let i = 0;
+  let n = 0;
+  while (i < buf.length && n < need) {
+    const h = buf[i++] ?? 0;
+    if (h & 0x80) {
+      const cnt = (h & 0x7f) + 1;
+      const hi = buf[i++] ?? 0;
+      const lo = buf[i++] ?? 0;
+      let v = (hi << 8) | lo;
+      if (v & 0x8000) v -= 0x10000;
+      for (let k = 0; k < cnt && n < need; k++) out[n++] = v;
+    } else {
+      const cnt = (h & 0x7f) + 1;
+      for (let k = 0; k < cnt && n < need; k++) {
+        const hi = buf[i++] ?? 0;
+        const lo = buf[i++] ?? 0;
+        let v = (hi << 8) | lo;
+        if (v & 0x8000) v -= 0x10000;
+        out[n++] = v;
+      }
+    }
+  }
+  return out;
 }
 
 /** White-high 0..1 field → ArtCAM relief (0.001 mm units, origin centred). */
@@ -94,7 +165,7 @@ export function reliefRlf(
     0x02, 0x06, 0x00, 0x01,
     ...u16be(cols),
     ...u16be(rows),
-    0x00, // unpacked int16 — shop file uses 0x01 + a closed pack
+    0x01,
     ...pNum(widthMm),
     ...pNum(heightMm),
     ...pNum(maxZ),
@@ -107,16 +178,23 @@ export function reliefRlf(
     0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
   ];
   const n = cols * rows;
-  const out = new Uint8Array(text.length + 1 + meta.length + n * 2 + MAGIC.length);
+  const units = new Int16Array(n);
+  const scale = maxZ / RLF_UNIT_MM;
+  for (let i = 0; i < n; i++) {
+    units[i] = Math.max(-RLF_RANGE_U, Math.min(RLF_RANGE_U, Math.round((h[i] ?? 0) * scale)));
+  }
+  const packed = packRlfHeights(units);
+  const feet = 8;
+  const out = new Uint8Array(text.length + 1 + meta.length + packed.length + feet * FOOT.length + MAGIC.length);
   let o = 0;
   for (const c of ascii(text)) out[o++] = c;
   out[o++] = 0x1a;
   for (const c of meta) out[o++] = c;
-  const scale = maxZ / RLF_UNIT_MM;
-  for (let i = 0; i < n; i++) {
-    const u = Math.max(-RLF_RANGE_U, Math.min(RLF_RANGE_U, Math.round((h[i] ?? 0) * scale)));
-    out[o++] = (u >> 8) & 0xff;
-    out[o++] = u & 0xff;
+  out.set(packed, o);
+  o += packed.length;
+  for (let i = 0; i < feet; i++) {
+    out.set(FOOT, o);
+    o += FOOT.length;
   }
   for (const c of MAGIC) out[o++] = c;
   return out;
@@ -173,19 +251,9 @@ export function rlfHasMagic(buf: Uint8Array): boolean {
   return n >= 4 && buf[n - 4] === 0x87 && buf[n - 3] === 0x65 && buf[n - 2] === 0x43 && buf[n - 1] === 0x21;
 }
 
-/** Unpacked BE int16 heights in 0.001 mm. */
 export function rlfUnits(buf: Uint8Array): Int16Array {
   const info = parseRlf(buf);
-  if (info.packed) throw new Error("rlf is packed");
   const n = info.cols * info.rows;
-  const out = new Int16Array(n);
-  let o = info.payloadAt;
-  for (let i = 0; i < n; i++) {
-    const hi = buf[o++] ?? 0;
-    const lo = buf[o++] ?? 0;
-    let v = (hi << 8) | lo;
-    if (v & 0x8000) v -= 0x10000;
-    out[i] = v;
-  }
-  return out;
+  const payload = buf.subarray(info.payloadAt, buf.length - 4 - 8 * FOOT.length);
+  return unpackRlfHeights(payload, n);
 }

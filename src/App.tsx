@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
-import { reliefRlf, rlfRasterCols } from "./lib/rlf";
+import { reliefRlf, rlfGrid } from "./lib/rlf";
+import { reliefTif } from "./lib/tif";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
 
@@ -122,22 +123,24 @@ export default function App() {
 
   const ready = !!grid;
 
-  async function saveRlf() {
+  async function saveArtcam() {
     if (!grid) return;
     setBusy("Relief");
     try {
+      const { cols, rows } = rlfGrid(board.widthMm, board.heightMm);
       let h = grid.height;
-      let cols = grid.cols;
-      let rows = grid.rows;
+      let c = cols;
+      let r = rows;
       if (pic) {
         const img = await loadImage(pic);
-        const next = await rasterFromImage(img, rlfRasterCols(board.widthMm, img.width, img.height), invert);
+        const next = await rasterFromImage(img, cols, invert, rows);
         h = normalize ? normalizeHeight(next.height) : next.height;
-        cols = next.cols;
-        rows = next.rows;
+        c = next.cols;
+        r = next.rows;
       }
-      download("relief.rlf", reliefRlf(h, cols, rows, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
-      setNote("relief.rlf ready. Open it in ArtCAM — File → Import Relief.");
+      download("relief.tif", reliefTif(h, c, r, board.widthMm, board.heightMm), "image/tiff");
+      download("relief.rlf", reliefRlf(h, c, r, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
+      setNote("relief.tif + relief.rlf. In ArtCAM: File → Open the .tif (16-bit height). Then toolpath.");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
     } finally {
@@ -157,7 +160,7 @@ export default function App() {
         <div>
           <div className="mark">Picture → ArtCAM relief</div>
           <h1>Carve</h1>
-          <p className="lede">Turn a picture into a .rlf. Do the toolpath in ArtCAM.</p>
+          <p className="lede">Turn a picture into a height file ArtCAM can open. Toolpath there.</p>
         </div>
         <div className={"spindle" + (busy ? " run" : " idle")} aria-live="polite">
           <i />
@@ -251,15 +254,17 @@ export default function App() {
         </div>
 
         <div className="out">
-          <button className="pri" disabled={!ready} onClick={() => void saveRlf()}>
-            Download relief.rlf
+          <button className="pri" disabled={!ready} onClick={() => void saveArtcam()}>
+            Download for ArtCAM
           </button>
         </div>
         <p className={"toast" + (err ? " on err" : note ? " on ok" : "")} role="status">
           {err || note}
         </p>
         <p className="foot">
-          This only makes the ArtCAM relief. Open <code>relief.rlf</code> with File → Import Relief, then toolpath there.
+          ArtCAM would not open our first .rlf (it only trusts its own packed reliefs). Use{" "}
+          <code>relief.tif</code> — File → Open — then set the model size if asked. <code>relief.rlf</code> is
+          included if Import Relief works on your build.
         </p>
       </div>
     </div>

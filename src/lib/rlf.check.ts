@@ -1,4 +1,4 @@
-import { parseRlf, reliefRlf, rlfHasMagic, rlfRasterCols, rlfUnits } from "./rlf.ts";
+import { parseRlf, reliefRlf, rlfGrid, rlfHasMagic, rlfUnits } from "./rlf.ts";
 
 let n = 0;
 const ok = (cond: boolean, msg: string) => {
@@ -12,7 +12,7 @@ const h = new Float32Array([0, 0.5, 1, 1, 0.25, 0.75, 0, 0, 1, 1, 0.5, 0]);
 const buf = reliefRlf(h, cols, rows, 40, 30, 8, new Date(Date.UTC(2026, 8, 25, 12, 0, 0)));
 const info = parseRlf(buf);
 ok(info.cols === 4 && info.rows === 3, "dims");
-ok(!info.packed, "unpacked flag");
+ok(info.packed, "packed flag like the shop file");
 ok(Math.abs(info.widthMm - 40) < 1e-6, "width mm");
 ok(Math.abs(info.heightMm - 30) < 1e-6, "height mm");
 ok(Math.abs(info.maxZ - 8) < 1e-6, "depth");
@@ -26,7 +26,7 @@ ok(u.length === 12, "12 samples");
 ok(u[2] === 8000, "white is 8.000 mm");
 ok(u[0] === 0, "black is 0");
 ok(u[1] === 4000, "mid is 4.000 mm");
-ok(rlfRasterCols(200, 100, 100) === 500, "0.4 mm/px on a 200 mm board");
-ok(rlfRasterCols(200, 100, 100, 200) === 200, "cap long side");
+ok(rlfGrid(200, 200).cols === 500 && rlfGrid(200, 200).rows === 500, "square 0.4 mm/px");
+ok(rlfGrid(200, 200, 200).cols === 200, "cap long side");
 
 console.log(`carve rlf.check OK (${n} assertions)`);

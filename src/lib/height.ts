@@ -46,20 +46,25 @@ export function heightToImageData(h: Float32Array, cols: number, rows: number): 
   return img;
 }
 
-export async function rasterFromImage(src: CanvasImageSource, cols: number, invert: boolean): Promise<{
+export async function rasterFromImage(
+  src: CanvasImageSource,
+  cols: number,
+  invert: boolean,
+  rows?: number,
+): Promise<{
   height: Float32Array;
   cols: number;
   rows: number;
 }> {
   const w = "width" in src ? Number(src.width) : cols;
   const h0 = "height" in src ? Number(src.height) : cols;
-  const rows = Math.max(8, Math.round((cols * h0) / Math.max(w, 1)));
+  const hh = Math.max(8, rows ?? Math.round((cols * h0) / Math.max(w, 1)));
   const canvas = document.createElement("canvas");
   canvas.width = cols;
-  canvas.height = rows;
+  canvas.height = hh;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No canvas");
-  ctx.drawImage(src as CanvasImageSource, 0, 0, cols, rows);
-  const { data } = ctx.getImageData(0, 0, cols, rows);
-  return { height: pixelsToHeight(data, invert), cols, rows };
+  ctx.drawImage(src as CanvasImageSource, 0, 0, cols, hh);
+  const { data } = ctx.getImageData(0, 0, cols, hh);
+  return { height: pixelsToHeight(data, invert), cols, rows: hh };
 }
