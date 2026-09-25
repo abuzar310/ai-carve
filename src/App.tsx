@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
 import { reliefBmp } from "./lib/bmp";
+import { artcamNames } from "./lib/names";
 import { reliefRlf, rlfGrid } from "./lib/rlf";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
@@ -138,9 +139,10 @@ export default function App() {
         c = next.cols;
         r = next.rows;
       }
-      download("carve.bmp", reliefBmp(h, c, r), "image/bmp");
-      download("carve.rlf", reliefRlf(h, c, r, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
-      setNote("carve.bmp ready. ArtCAM Pro: Open Existing Model → carve.bmp. Then Reliefs → Create Relief from Bitmap.");
+      const { bmp, rlf } = artcamNames();
+      download(bmp, reliefBmp(h, c, r), "image/bmp");
+      download(rlf, reliefRlf(h, c, r, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
+      setNote(`${bmp} ready. ArtCAM Pro: Open Existing Model → that .bmp. Then Reliefs → Create Relief from Bitmap.`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
     } finally {
@@ -262,9 +264,8 @@ export default function App() {
           {err || note}
         </p>
         <p className="foot">
-          Do not open <code>relief.rlf_3</code> — ArtCAM Pro does not know that name. Use{" "}
-          <code>carve.bmp</code>: Open Existing Model, set the size if asked, then Reliefs → Create Relief from
-          Bitmap (height = your depth).
+          Each download gets a new name like <code>carve-m6k8x2p-ab3k.bmp</code>, so Windows will not make{" "}
+          <code>.rlf_3</code>. Open the <code>.bmp</code> in ArtCAM Pro, then Reliefs → Create Relief from Bitmap.
         </p>
       </div>
     </div>
