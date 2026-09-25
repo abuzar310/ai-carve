@@ -144,7 +144,7 @@ export default function App() {
       download(bmp, reliefBmp(h, c, r, board.widthMm, board.heightMm), "image/bmp");
       download(tif, reliefTif(h, c, r, board.widthMm, board.heightMm), "image/tiff");
       setNote(
-        `${bmp} + ${tif} ready. Open the picture in ArtCAM, raise the relief, then Reliefs → Save Composite as .rlf.`,
+        `${bmp} ready. ArtCAM start → Open an image → that .bmp. Width ${board.widthMm} mm, Z ${board.depthMm} mm. Then Reliefs → Save Composite as .rlf.`,
       );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
@@ -268,18 +268,15 @@ export default function App() {
         </p>
         <ol className="steps">
           <li>
-            Download. You get a <code>.bmp</code> (every tutorial) and a 16-bit <code>.tif</code> (ArtCAM’s own height
-            file). Not an <code>.rlf</code>.
+            Download. Use the <code>.bmp</code>. The <code>.tif</code> is the same height, 16-bit. Do not open an{" "}
+            <code>.rlf</code>.
           </li>
           <li>
-            ArtCAM start → Open Existing Model. Set <b>Files of type</b> to <b>Bitmap (*.bmp)</b> or{" "}
-            <b>TIFF (*.tif)</b>.
+            ArtCAM start screen → <b>Open an image</b> (not Open Existing Model). Pick the <code>.bmp</code>.
           </li>
           <li>
-            Choose <b>Image size</b> = the Width / Height mm on this page.
-          </li>
-          <li>
-            Reliefs → Create Relief from Bitmap. Height = Depth mm.
+            Set Model Size: Width / Height = the mm here. Set <b>Z height</b> = Depth mm. Dark is deep, light is high.
+            OK — the relief is already made.
           </li>
           <li>
             Reliefs → Save Composite → <b>ArtCAM Relief (*.rlf)</b>. That is the shop file.
