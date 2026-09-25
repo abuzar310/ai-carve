@@ -169,6 +169,9 @@ input[type="number"] {
 
 .foot { margin: 4px 0 0; max-width: 62ch; color: var(--mute); font-size: 14px; text-wrap: pretty }
 .foot code { font-family: var(--mono); font-size: 13px }
+.steps { margin: 12px 0 0; padding-left: 1.3em; max-width: 62ch; color: var(--mute); font-size: 14px }
+.steps li { margin: 0 0 8px }
+.steps code { font-family: var(--mono); font-size: 13px }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px) }

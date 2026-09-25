@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
 import { reliefBmp } from "./lib/bmp";
 import { artcamNames } from "./lib/names";
-import { reliefRlf, rlfGrid } from "./lib/rlf";
+import { rlfGrid } from "./lib/rlf";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
 
@@ -139,10 +139,11 @@ export default function App() {
         c = next.cols;
         r = next.rows;
       }
-      const { bmp, rlf } = artcamNames();
-      download(bmp, reliefBmp(h, c, r), "image/bmp");
-      download(rlf, reliefRlf(h, c, r, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
-      setNote(`${bmp} ready. ArtCAM Pro: Open Existing Model → that .bmp. Then Reliefs → Create Relief from Bitmap.`);
+      const { bmp } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
+      download(bmp, reliefBmp(h, c, r, board.widthMm, board.heightMm), "image/bmp");
+      setNote(
+        `${bmp} ready. In ArtCAM Open, set Files of type to Bitmap (*.bmp). Then Image size = ${board.widthMm} × ${board.heightMm} mm. Then Reliefs → Create Relief from Bitmap, height ${board.depthMm} mm.`,
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
     } finally {
@@ -162,7 +163,7 @@ export default function App() {
         <div>
           <div className="mark">Picture → ArtCAM relief</div>
           <h1>Carve</h1>
-          <p className="lede">Turn a picture into a height file ArtCAM can open. Toolpath there.</p>
+          <p className="lede">ArtCAM Open Existing Model is for a picture, not an .rlf. We give you a .bmp.</p>
         </div>
         <div className={"spindle" + (busy ? " run" : " idle")} aria-live="polite">
           <i />
@@ -257,16 +258,27 @@ export default function App() {
 
         <div className="out">
           <button className="pri" disabled={!ready} onClick={() => void saveArtcam()}>
-            Download for ArtCAM
+            Download BMP for ArtCAM
           </button>
         </div>
         <p className={"toast" + (err ? " on err" : note ? " on ok" : "")} role="status">
           {err || note}
         </p>
-        <p className="foot">
-          Each download gets a new name like <code>carve-m6k8x2p-ab3k.bmp</code>, so Windows will not make{" "}
-          <code>.rlf_3</code>. Open the <code>.bmp</code> in ArtCAM Pro, then Reliefs → Create Relief from Bitmap.
-        </p>
+        <ol className="steps">
+          <li>
+            Download. You get one <code>.bmp</code> — do not open any <code>.rlf</code>.
+          </li>
+          <li>
+            ArtCAM start screen → Open Existing Model. In the box, set <b>Files of type</b> to{" "}
+            <b>Bitmap (*.bmp)</b> (not ArtCAM Model).
+          </li>
+          <li>
+            Pick the download. Choose <b>Image size</b> and type the Width / Height mm from this page.
+          </li>
+          <li>
+            Reliefs → Create Relief from Bitmap. Height = Depth mm. Toolpath after that.
+          </li>
+        </ol>
       </div>
     </div>
   );
