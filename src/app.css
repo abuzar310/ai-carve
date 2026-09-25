@@ -67,7 +67,7 @@ h1 {
 
 .strip {
   position: relative;
-  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  display: grid; grid-template-columns: 1fr 1fr;
   min-height: 292px;
   background: var(--crt);
   border: 10px solid #2a2d27;

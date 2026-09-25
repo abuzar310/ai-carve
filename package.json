@@ -7,7 +7,7 @@
     "dev": "vite --host --port 3030",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host --port 3030",
-    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/gcode.check.ts && tsx --no-warnings src/lib/stl.check.ts && tsx --no-warnings src/lib/rlf.check.ts"
+    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/rlf.check.ts"
   },
   "dependencies": {
     "react": "19.2.4",

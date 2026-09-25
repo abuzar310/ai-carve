@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { reliefGcode, stepOf, type Cut } from "./lib/gcode";
+import { useEffect, useRef, useState } from "react";
 import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
 import { reliefRlf, rlfRasterCols } from "./lib/rlf";
-import { reliefStl } from "./lib/stl";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
 
@@ -24,12 +22,6 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-type DirPicker = () => Promise<{
-  getFileHandle: (n: string, o?: { create?: boolean }) => Promise<{
-    createWritable: () => Promise<{ write: (d: BufferSource | Blob | string) => Promise<void>; close: () => Promise<void> }>;
-  }>;
-}>;
-
 export default function App() {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
   const [pic, setPic] = useState("");
@@ -40,29 +32,10 @@ export default function App() {
   const [note, setNote] = useState("");
   const [over, setOver] = useState(false);
   const [cutPass, setCutPass] = useState(0);
-  const [canDrive, setCanDrive] = useState(false);
   const [grid, setGrid] = useState<{ height: Float32Array; cols: number; rows: number } | null>(null);
-  const [cut, setCut] = useState<Cut>({
-    widthMm: 200,
-    heightMm: 200,
-    depthMm: 4,
-    bitMm: 6,
-    stepPct: 20,
-    safeZ: 8,
-    feed: 800,
-    plunge: 200,
-    spindle: 18000,
-    passMm: 1.5,
-    cross: false,
-    stockMm: 18,
-  });
+  const [board, setBoard] = useState({ widthMm: 200, heightMm: 200, depthMm: 4 });
   const depth = useRef<HTMLCanvasElement>(null);
-  const path = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setCanDrive(typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === "function");
-  }, []);
 
   useEffect(() => {
     if (!err && !note) return;
@@ -147,70 +120,8 @@ export default function App() {
     canvas.getContext("2d")?.putImageData(heightToImageData(grid.height, grid.cols, grid.rows), 0, 0);
   }, [grid]);
 
-  useEffect(() => {
-    const canvas = path.current;
-    if (!canvas || !grid) return;
-    const w = 360;
-    const h = Math.round((w * grid.rows) / grid.cols);
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.fillStyle = "#10140f";
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = "#d78900";
-    ctx.lineWidth = 1;
-    const rows = Math.min(48, Math.max(16, Math.round(cut.heightMm / Math.max(stepOf(cut), 0.4))));
-    for (let iy = 0; iy <= rows; iy++) {
-      ctx.beginPath();
-      for (let ix = 0; ix <= 80; ix++) {
-        const i = iy % 2 === 0 ? ix : 80 - ix;
-        const x = (i / 80) * (grid.cols - 1);
-        const y = (iy / rows) * (grid.rows - 1);
-        const z = grid.height[Math.round(y) * grid.cols + Math.round(x)] ?? 0;
-        const px = (i / 80) * w;
-        const py = (iy / rows) * h - z * 18;
-        if (ix === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.stroke();
-    }
-  }, [grid, cut]);
-
   const ready = !!grid;
-  const files = useMemo(() => {
-    if (!grid) return null;
-    return {
-      nc: reliefGcode(grid.height, grid.cols, grid.rows, cut),
-      stl: reliefStl(grid.height, grid.cols, grid.rows, cut.widthMm, cut.heightMm, cut.depthMm),
-    };
-  }, [grid, cut]);
 
-  function stockWarn() {
-    return cut.depthMm >= cut.stockMm ? " Depth is at or through the stock — check thickness." : "";
-  }
-  function saveNc() {
-    if (!files) return;
-    download("carve.nc", files.nc, "text/plain");
-    setNote("carve.nc downloaded. Copy it onto the pen drive." + stockWarn());
-  }
-  function saveTap() {
-    if (!files) return;
-    download("carve.tap", files.nc, "text/plain");
-    setNote("carve.tap downloaded (same path, Mach3 name)." + stockWarn());
-  }
-  function saveStl() {
-    if (!files) return;
-    download("relief.stl", files.stl, "model/stl");
-    setNote("relief.stl — open in ArtCAM if you still want their toolpath.");
-  }
-  function saveHeight() {
-    depth.current?.toBlob((blob) => {
-      if (!blob) return;
-      download("height.png", blob, "image/png");
-      setNote("height.png — ArtCAM can read this as a relief bitmap.");
-    });
-  }
   async function saveRlf() {
     if (!grid) return;
     setBusy("Relief");
@@ -220,51 +131,33 @@ export default function App() {
       let rows = grid.rows;
       if (pic) {
         const img = await loadImage(pic);
-        const next = await rasterFromImage(img, rlfRasterCols(cut.widthMm, img.width, img.height), invert);
+        const next = await rasterFromImage(img, rlfRasterCols(board.widthMm, img.width, img.height), invert);
         h = normalize ? normalizeHeight(next.height) : next.height;
         cols = next.cols;
         rows = next.rows;
       }
-      download("relief.rlf", reliefRlf(h, cols, rows, cut.widthMm, cut.heightMm, cut.depthMm), "application/octet-stream");
-      setNote("relief.rlf — ArtCAM: File → Import Relief. Then toolpath onto the stick." + stockWarn());
+      download("relief.rlf", reliefRlf(h, cols, rows, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
+      setNote("relief.rlf ready. Open it in ArtCAM — File → Import Relief.");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
     } finally {
       setBusy("");
     }
   }
-  async function writeDrive() {
-    if (!files) return;
-    const pick = (window as unknown as { showDirectoryPicker?: DirPicker }).showDirectoryPicker;
-    if (!pick) {
-      saveNc();
-      return;
-    }
-    try {
-      const dir = await pick();
-      const handle = await dir.getFileHandle("carve.nc", { create: true });
-      const out = await handle.createWritable();
-      await out.write(files.nc);
-      await out.close();
-      setNote("Wrote carve.nc onto the drive." + stockWarn());
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setErr(e instanceof Error ? e.message : "Drive write failed");
-    }
-  }
-  function setNum(key: keyof Cut, raw: string) {
+
+  function setNum(key: keyof typeof board, raw: string) {
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return;
-    setCut((c) => ({ ...c, [key]: n }));
+    setBoard((b) => ({ ...b, [key]: n }));
   }
 
   return (
     <div className="shell">
       <header className="rail">
         <div>
-          <div className="mark">Picture · ArtCAM relief · stick</div>
+          <div className="mark">Picture → ArtCAM relief</div>
           <h1>Carve</h1>
-          <p className="lede">Upload or generate a picture. Get the same kind of .rlf the shop opens in ArtCAM.</p>
+          <p className="lede">Turn a picture into a .rlf. Do the toolpath in ArtCAM.</p>
         </div>
         <div className={"spindle" + (busy ? " run" : " idle")} aria-live="polite">
           <i />
@@ -274,7 +167,7 @@ export default function App() {
 
       <div
         className={"strip" + (cutPass ? " cut" : "")}
-        aria-label="Picture, depth, toolpath"
+        aria-label="Picture and depth"
         onDragOver={(e) => {
           e.preventDefault();
           setOver(true);
@@ -295,10 +188,6 @@ export default function App() {
         <div className={"cell" + (grid ? " has-art" : "") + (busy ? " busy" : "")}>
           <span className="tag">Depth</span>
           {grid ? <canvas key={"d" + cutPass} ref={depth} /> : <div className="ph">{busy ? "Reading height…" : "White stays high. Dark is the cut."}</div>}
-        </div>
-        <div className={"cell" + (grid ? " has-art" : "") + (busy ? " busy" : "")}>
-          <span className="tag">Path</span>
-          {grid ? <canvas key={"p" + cutPass} ref={path} /> : <div className="ph">{busy ? "Plotting…" : "Raster the machine will follow"}</div>}
         </div>
       </div>
       <div className={"bar" + (busy ? " on" : "")} aria-hidden>
@@ -341,47 +230,15 @@ export default function App() {
         <div className="knobs">
           <label>
             Width mm
-            <input type="number" inputMode="decimal" value={cut.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
+            <input type="number" inputMode="decimal" value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
           </label>
           <label>
             Height mm
-            <input type="number" inputMode="decimal" value={cut.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
+            <input type="number" inputMode="decimal" value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
           </label>
           <label>
             Depth mm
-            <input type="number" inputMode="decimal" value={cut.depthMm} step={0.1} onChange={(e) => setNum("depthMm", e.target.value)} />
-          </label>
-          <label>
-            Stock mm
-            <input type="number" inputMode="decimal" value={cut.stockMm} onChange={(e) => setNum("stockMm", e.target.value)} />
-          </label>
-          <label>
-            Bit mm
-            <input type="number" inputMode="decimal" value={cut.bitMm} step={0.1} onChange={(e) => setNum("bitMm", e.target.value)} />
-          </label>
-          <label>
-            Stepover % of bit
-            <input type="number" inputMode="decimal" value={cut.stepPct} onChange={(e) => setNum("stepPct", e.target.value)} />
-          </label>
-          <label>
-            Pass mm
-            <input type="number" inputMode="decimal" value={cut.passMm} step={0.1} onChange={(e) => setNum("passMm", e.target.value)} />
-          </label>
-          <label>
-            Feed mm/min
-            <input type="number" inputMode="decimal" value={cut.feed} onChange={(e) => setNum("feed", e.target.value)} />
-          </label>
-          <label>
-            Plunge mm/min
-            <input type="number" inputMode="decimal" value={cut.plunge} onChange={(e) => setNum("plunge", e.target.value)} />
-          </label>
-          <label>
-            Spindle RPM
-            <input type="number" inputMode="decimal" value={cut.spindle} onChange={(e) => setNum("spindle", e.target.value)} />
-          </label>
-          <label>
-            Safe Z mm
-            <input type="number" inputMode="decimal" value={cut.safeZ} onChange={(e) => setNum("safeZ", e.target.value)} />
+            <input type="number" inputMode="decimal" value={board.depthMm} step={0.1} onChange={(e) => setNum("depthMm", e.target.value)} />
           </label>
           <label className="check">
             <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
@@ -391,42 +248,18 @@ export default function App() {
             <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />
             Normalize
           </label>
-          <label className="check">
-            <input type="checkbox" checked={cut.cross} onChange={(e) => setCut((c) => ({ ...c, cross: e.target.checked }))} />
-            Also cut across
-          </label>
         </div>
 
         <div className="out">
           <button className="pri" disabled={!ready} onClick={() => void saveRlf()}>
             Download relief.rlf
           </button>
-          <button className="pri" disabled={!ready} onClick={saveNc}>
-            Download carve.nc
-          </button>
-          {canDrive ? (
-            <button className="pri" disabled={!ready} onClick={() => void writeDrive()}>
-              Write pen drive
-            </button>
-          ) : null}
-          <button className="sec" disabled={!ready} onClick={saveTap}>
-            carve.tap
-          </button>
-          <button className="sec" disabled={!ready} onClick={saveStl}>
-            relief.stl
-          </button>
-          <button className="sec" disabled={!ready} onClick={saveHeight}>
-            height.png
-          </button>
         </div>
         <p className={"toast" + (err ? " on err" : note ? " on ok" : "")} role="status">
           {err || note}
         </p>
         <p className="foot">
-          <code>relief.rlf</code> is the ArtCAM relief (same header the shop file uses).{" "}
-          <code>carve.nc</code> is the path for the stick. Z0 is the top of the board. Stepover is{" "}
-          {stepOf(cut).toFixed(2)} mm ({cut.stepPct}% of a {cut.bitMm} mm bit). Dry-run above the board
-          before the first real cut.
+          This only makes the ArtCAM relief. Open <code>relief.rlf</code> with File → Import Relief, then toolpath there.
         </p>
       </div>
     </div>
