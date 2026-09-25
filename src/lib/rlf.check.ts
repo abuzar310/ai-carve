@@ -12,7 +12,7 @@ const h = new Float32Array([0, 0.5, 1, 1, 0.25, 0.75, 0, 0, 1, 1, 0.5, 0]);
 const buf = reliefRlf(h, cols, rows, 40, 30, 8, new Date(Date.UTC(2026, 8, 25, 12, 0, 0)));
 const info = parseRlf(buf);
 ok(info.cols === 4 && info.rows === 3, "dims");
-ok(info.packed, "packed flag like the shop file");
+ok(!info.packed, "ArtCAM Pro unpacked");
 ok(Math.abs(info.widthMm - 40) < 1e-6, "width mm");
 ok(Math.abs(info.heightMm - 30) < 1e-6, "height mm");
 ok(Math.abs(info.maxZ - 8) < 1e-6, "depth");

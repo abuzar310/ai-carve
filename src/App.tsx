@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
+import { reliefBmp } from "./lib/bmp";
 import { reliefRlf, rlfGrid } from "./lib/rlf";
-import { reliefTif } from "./lib/tif";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
 
@@ -138,9 +138,9 @@ export default function App() {
         c = next.cols;
         r = next.rows;
       }
-      download("relief.tif", reliefTif(h, c, r, board.widthMm, board.heightMm), "image/tiff");
-      download("relief.rlf", reliefRlf(h, c, r, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
-      setNote("relief.tif + relief.rlf. In ArtCAM: File → Open the .tif (16-bit height). Then toolpath.");
+      download("carve.bmp", reliefBmp(h, c, r), "image/bmp");
+      download("carve.rlf", reliefRlf(h, c, r, board.widthMm, board.heightMm, board.depthMm), "application/octet-stream");
+      setNote("carve.bmp ready. ArtCAM Pro: Open Existing Model → carve.bmp. Then Reliefs → Create Relief from Bitmap.");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
     } finally {
@@ -262,9 +262,9 @@ export default function App() {
           {err || note}
         </p>
         <p className="foot">
-          ArtCAM would not open our first .rlf (it only trusts its own packed reliefs). Use{" "}
-          <code>relief.tif</code> — File → Open — then set the model size if asked. <code>relief.rlf</code> is
-          included if Import Relief works on your build.
+          Do not open <code>relief.rlf_3</code> — ArtCAM Pro does not know that name. Use{" "}
+          <code>carve.bmp</code>: Open Existing Model, set the size if asked, then Reliefs → Create Relief from
+          Bitmap (height = your depth).
         </p>
       </div>
     </div>
