@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { reliefGcode, stepOf, type Cut } from "./lib/gcode";
 import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
+import { reliefRlf, rlfRasterCols } from "./lib/rlf";
 import { reliefStl } from "./lib/stl";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
 
-function download(name: string, data: BlobPart, type: string) {
-  const url = URL.createObjectURL(new Blob([data], { type }));
+function download(name: string, data: string | ArrayBuffer | Uint8Array | Blob, type: string) {
+  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data as BlobPart], { type }));
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
@@ -210,6 +211,28 @@ export default function App() {
       setNote("height.png — ArtCAM can read this as a relief bitmap.");
     });
   }
+  async function saveRlf() {
+    if (!grid) return;
+    setBusy("Relief");
+    try {
+      let h = grid.height;
+      let cols = grid.cols;
+      let rows = grid.rows;
+      if (pic) {
+        const img = await loadImage(pic);
+        const next = await rasterFromImage(img, rlfRasterCols(cut.widthMm, img.width, img.height), invert);
+        h = normalize ? normalizeHeight(next.height) : next.height;
+        cols = next.cols;
+        rows = next.rows;
+      }
+      download("relief.rlf", reliefRlf(h, cols, rows, cut.widthMm, cut.heightMm, cut.depthMm), "application/octet-stream");
+      setNote("relief.rlf — ArtCAM: File → Import Relief. Then toolpath onto the stick." + stockWarn());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Relief failed");
+    } finally {
+      setBusy("");
+    }
+  }
   async function writeDrive() {
     if (!files) return;
     const pick = (window as unknown as { showDirectoryPicker?: DirPicker }).showDirectoryPicker;
@@ -239,9 +262,9 @@ export default function App() {
     <div className="shell">
       <header className="rail">
         <div>
-          <div className="mark">Picture · relief · stick</div>
+          <div className="mark">Picture · ArtCAM relief · stick</div>
           <h1>Carve</h1>
-          <p className="lede">Type what you want in the wood. Get a file the CNC will run.</p>
+          <p className="lede">Upload or generate a picture. Get the same kind of .rlf the shop opens in ArtCAM.</p>
         </div>
         <div className={"spindle" + (busy ? " run" : " idle")} aria-live="polite">
           <i />
@@ -375,6 +398,9 @@ export default function App() {
         </div>
 
         <div className="out">
+          <button className="pri" disabled={!ready} onClick={() => void saveRlf()}>
+            Download relief.rlf
+          </button>
           <button className="pri" disabled={!ready} onClick={saveNc}>
             Download carve.nc
           </button>
@@ -397,8 +423,10 @@ export default function App() {
           {err || note}
         </p>
         <p className="foot">
-          Z0 is the top of the board. Stepover is {stepOf(cut).toFixed(2)} mm ({cut.stepPct}% of a {cut.bitMm} mm
-          bit). Put <code>carve.nc</code> on the stick. Dry-run above the board before the first real cut.
+          <code>relief.rlf</code> is the ArtCAM relief (same header the shop file uses).{" "}
+          <code>carve.nc</code> is the path for the stick. Z0 is the top of the board. Stepover is{" "}
+          {stepOf(cut).toFixed(2)} mm ({cut.stepPct}% of a {cut.bitMm} mm bit). Dry-run above the board
+          before the first real cut.
         </p>
       </div>
     </div>
