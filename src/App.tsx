@@ -3,7 +3,6 @@ import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/heigh
 import { reliefBmp } from "./lib/bmp";
 import { artcamNames } from "./lib/names";
 import { rlfGrid } from "./lib/rlf";
-import { reliefTif } from "./lib/tif";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
 
@@ -140,12 +139,9 @@ export default function App() {
         c = next.cols;
         r = next.rows;
       }
-      const { bmp, tif } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
+      const { bmp } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
       download(bmp, reliefBmp(h, c, r, board.widthMm, board.heightMm), "image/bmp");
-      download(tif, reliefTif(h, c, r, board.widthMm, board.heightMm), "image/tiff");
-      setNote(
-        `${bmp} ready. ArtCAM start → Open an image → that .bmp. Width ${board.widthMm} mm, Z ${board.depthMm} mm. Then Reliefs → Save Composite as .rlf.`,
-      );
+      setNote(bmp);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
     } finally {
@@ -165,7 +161,7 @@ export default function App() {
         <div>
           <div className="mark">Picture → ArtCAM relief</div>
           <h1>Carve</h1>
-          <p className="lede">Same path as the ArtCAM tutorials: greyscale picture in, ArtCAM raises the relief and saves the .rlf.</p>
+          <p className="lede">Picture in. One height file out. You do the rest in ArtCAM.</p>
         </div>
         <div className={"spindle" + (busy ? " run" : " idle")} aria-live="polite">
           <i />
@@ -260,28 +256,12 @@ export default function App() {
 
         <div className="out">
           <button className="pri" disabled={!ready} onClick={() => void saveArtcam()}>
-            Download for ArtCAM
+            Download file
           </button>
         </div>
         <p className={"toast" + (err ? " on err" : note ? " on ok" : "")} role="status">
           {err || note}
         </p>
-        <ol className="steps">
-          <li>
-            Download. Use the <code>.bmp</code>. The <code>.tif</code> is the same height, 16-bit. Do not open an{" "}
-            <code>.rlf</code>.
-          </li>
-          <li>
-            ArtCAM start screen → <b>Open an image</b> (not Open Existing Model). Pick the <code>.bmp</code>.
-          </li>
-          <li>
-            Set Model Size: Width / Height = the mm here. Set <b>Z height</b> = Depth mm. Dark is deep, light is high.
-            OK — the relief is already made.
-          </li>
-          <li>
-            Reliefs → Save Composite → <b>ArtCAM Relief (*.rlf)</b>. That is the shop file.
-          </li>
-        </ol>
       </div>
     </div>
   );
