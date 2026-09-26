@@ -1,6 +1,6 @@
 import { pixelsToHeight, normalizeHeight } from "./height.ts";
 import { refineHeight } from "./refine.ts";
-import { buildRelief } from "./mesh.ts";
+import { buildRelief, fieldCols, triangleEstimate } from "./mesh.ts";
 import { analyzeStl, parseStl, writeStl } from "./stl.ts";
 import { validateMesh, validateStl } from "./validate.ts";
 
@@ -94,6 +94,9 @@ const perfR = validateStl(perfBuf, perfMesh);
 ok(perfR.ok, `perf stl ${perfR.errors.join("; ")}`);
 ok(perfMesh.meta.triangleCount > 50_000, "preview-scale density");
 ok(perfBuf.byteLength === 84 + perfMesh.meta.triangleCount * 50, "binary size");
+ok(fieldCols("ultra", 256) === 256, "ultra does not invent pixels");
+ok(fieldCols("ultra", 2000) === 720 && fieldCols("high", 2000) === 512, "quality caps");
+ok(triangleEstimate(220, 220) === 193596, "standard triangle estimate");
 
 console.log(
   `carve mesh.check OK (${n} assertions) · 160² ${perfMesh.meta.triangleCount} tris · ${(perfBuf.byteLength / 1e6).toFixed(2)} MB · ${perfMs} ms`,

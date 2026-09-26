@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { heightToImageData, normalizeHeight, rasterFromImage } from "./lib/height";
+import { heightToImageData, normalizeHeight, rasterFromImage, resampleHeight } from "./lib/height";
 import { refineHeight } from "./lib/refine";
-import { QUALITY, buildRelief, exportCols, previewCols, type Quality } from "./lib/mesh";
+import { QUALITY, buildRelief, fieldCols, previewCols, triangleEstimate, type Quality } from "./lib/mesh";
 import { writeStl } from "./lib/stl";
 import { formatReport, validateMesh, validateStl } from "./lib/validate";
 import { reliefBmp } from "./lib/bmp";
 import { artcamNames } from "./lib/names";
-import { rlfGrid } from "./lib/rlf";
 import { ReliefPreview } from "./preview";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
@@ -39,8 +38,9 @@ export default function App() {
   const [invert, setInvert] = useState(false);
   const [normalize, setNormalize] = useState(true);
   const [contrast, setContrast] = useState(1.15);
-  const [smooth, setSmooth] = useState(1);
-  const [quality, setQuality] = useState<Quality>("standard");
+  const [smooth, setSmooth] = useState(0);
+  const [quality, setQuality] = useState<Quality>("high");
+  const [tint, setTint] = useState(true);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
@@ -70,7 +70,9 @@ export default function App() {
     const img = await loadImage(src);
     setBusy("Generating depth");
     await tick();
-    const next = await rasterFromImage(img, previewCols(quality, mobile), invert);
+    const srcMax = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
+    const cols = fieldCols(quality, srcMax);
+    const next = await rasterFromImage(img, cols, invert);
     const height = normalize ? normalizeHeight(next.height) : next.height;
     setRaw({ height, cols: next.cols, rows: next.rows });
     setCutPass((n) => n + 1);
@@ -83,9 +85,16 @@ export default function App() {
     [raw, contrast, smooth],
   );
 
+  const previewGrid = useMemo(() => {
+    if (!raw || !refined) return null;
+    const cols = previewCols(quality, mobile, raw.cols);
+    const rows = Math.max(2, Math.round((raw.rows * cols) / raw.cols));
+    return { height: resampleHeight(refined, raw.cols, raw.rows, cols, rows), cols, rows };
+  }, [raw, refined, quality, mobile]);
+
   const mesh = useMemo(
-    () => (raw && refined ? buildRelief(refined, raw.cols, raw.rows, board) : null),
-    [raw, refined, board],
+    () => (previewGrid ? buildRelief(previewGrid.height, previewGrid.cols, previewGrid.rows, board) : null),
+    [previewGrid, board],
   );
 
   const report = useMemo(() => (mesh ? validateMesh(mesh) : null), [mesh]);
@@ -163,22 +172,9 @@ export default function App() {
     if (!refined || !raw) return;
     setErr("");
     try {
-      setBusy("Generating depth");
-      await tick();
-      let h = refined;
-      let c = raw.cols;
-      let r = raw.rows;
-      const cols = exportCols(quality);
-      if (pic) {
-        const img = await loadImage(pic);
-        const next = await rasterFromImage(img, cols, invert);
-        h = refineHeight(normalize ? normalizeHeight(next.height) : next.height, next.cols, next.rows, { contrast, smooth });
-        c = next.cols;
-        r = next.rows;
-      }
       setBusy("Generating mesh");
       await tick();
-      const out = buildRelief(h, c, r, board);
+      const out = buildRelief(refined, raw.cols, raw.rows, board);
       setBusy("Validating mesh");
       await tick();
       const meshR = validateMesh(out);
@@ -202,17 +198,9 @@ export default function App() {
     if (!raw) return;
     setBusy("Relief");
     try {
-      const { cols, rows } = rlfGrid(board.widthMm, board.heightMm);
-      let h = refined ?? raw.height;
-      let c = raw.cols;
-      let r = raw.rows;
-      if (pic) {
-        const img = await loadImage(pic);
-        const next = await rasterFromImage(img, cols, invert, rows);
-        h = refineHeight(normalize ? normalizeHeight(next.height) : next.height, next.cols, next.rows, { contrast, smooth });
-        c = next.cols;
-        r = next.rows;
-      }
+      const h = refined ?? raw.height;
+      const c = raw.cols;
+      const r = raw.rows;
       const { bmp } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
       download(bmp, reliefBmp(h, c, r, board.widthMm, board.heightMm), "image/bmp");
       setNote(bmp);
@@ -275,7 +263,7 @@ export default function App() {
       <section className={"stage" + (mesh ? " has-art" : "")} aria-label="3D relief">
         <span className="tag">3D relief</span>
         {mesh ? (
-          <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} view={view.kind} viewTick={view.n} />
+          <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
         ) : (
           <div className="ph">{busy ? busy + "…" : "The solid model appears here after a picture is loaded."}</div>
         )}
@@ -293,14 +281,18 @@ export default function App() {
             <button type="button" aria-pressed={showBase} onClick={() => setShowBase((v) => !v)}>
               Base
             </button>
+            <button type="button" aria-pressed={tint} onClick={() => setTint((v) => !v)}>
+              Depth
+            </button>
           </div>
         )}
       </section>
       {report && (
         <p className={"stats" + (report.ok ? "" : " bad")}>
-          {report.ok ? "MESH VALID" : "MESH INVALID"} · {report.triangles.toLocaleString()} triangles ·{" "}
-          {report.size[0].toFixed(1)} × {report.size[1].toFixed(1)} × {report.size[2].toFixed(2)} mm · Z {report.zMin.toFixed(2)}…{report.zMax.toFixed(2)} ·
-          relief {report.topSpan.toFixed(2)} mm
+          {report.ok ? "MESH VALID" : "MESH INVALID"} · preview {previewGrid?.cols}×{previewGrid?.rows} · field{" "}
+          {raw?.cols}×{raw?.rows} · {report.triangles.toLocaleString()} on screen · export{" "}
+          {raw ? triangleEstimate(raw.cols, raw.rows).toLocaleString() : "—"} tris · {report.size[0].toFixed(1)} × {report.size[1].toFixed(1)} ×{" "}
+          {report.size[2].toFixed(2)} mm · Z {report.zMin.toFixed(2)}…{report.zMax.toFixed(2)} · relief {report.topSpan.toFixed(2)} mm
         </p>
       )}
 
@@ -399,7 +391,7 @@ export default function App() {
         <ol className="steps">
           <li>Upload or generate a picture</li>
           <li>Check the 3D relief — rotate so the depth is obvious</li>
-          <li>Set size, depth, base, and quality</li>
+          <li>Set size, depth, base, and quality (Standard = test, High = CNC, Ultra ≈ 1–2M tris when the picture is sharp enough)</li>
           <li>Download STL for ArtCAM Import 3D Model, or BMP for Open an image</li>
         </ol>
         <p className={"toast" + (err ? " on err" : note ? " on ok" : "")} role="status">

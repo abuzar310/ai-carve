@@ -1,10 +1,11 @@
 import { writeFileSync } from "node:fs";
-import { normalizeHeight } from "../src/lib/height.ts";
+import { normalizeHeight, resampleHeight } from "../src/lib/height.ts";
 import { refineHeight } from "../src/lib/refine.ts";
-import { buildRelief } from "../src/lib/mesh.ts";
+import { QUALITY, buildRelief, fieldCols, previewCols, triangleEstimate, type Quality } from "../src/lib/mesh.ts";
 import { analyzeStl, writeStl } from "../src/lib/stl.ts";
 import { validateMesh, validateStl } from "../src/lib/validate.ts";
 
+/** Same ornamental field used for the 193,596-triangle Standard STL. */
 function carving(cols: number, rows: number): Float32Array {
   const h = new Float32Array(cols * rows);
   const cx = (cols - 1) / 2;
@@ -29,44 +30,71 @@ function carving(cols: number, rows: number): Float32Array {
   return normalizeHeight(h);
 }
 
-const src = 512;
-const depth = 220;
-const raw = carving(depth, depth);
-const refined = refineHeight(raw, depth, depth, { contrast: 1.2, smooth: 1 });
-const t0 = Date.now();
-const mesh = buildRelief(refined, depth, depth, { widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
-const meshMs = Date.now() - t0;
-const meshR = validateMesh(mesh);
-if (!meshR.ok) throw new Error(meshR.errors.join("; "));
-const t1 = Date.now();
-const buf = writeStl(mesh);
-const stlMs = Date.now() - t1;
-const stlR = validateStl(buf, mesh);
-if (!stlR.ok) throw new Error(stlR.errors.join("; "));
-const stats = analyzeStl(buf);
-const out = "/tmp/carve-example.stl";
-writeFileSync(out, Buffer.from(buf));
+function detailEnergy(h: Float32Array, cols: number, rows: number): number {
+  let e = 0;
+  let n = 0;
+  for (let y = 1; y < rows - 1; y++) {
+    for (let x = 1; x < cols - 1; x++) {
+      const c = h[y * cols + x] ?? 0;
+      const lap = 4 * c - (h[y * cols + x - 1] ?? 0) - (h[y * cols + x + 1] ?? 0) - (h[(y - 1) * cols + x] ?? 0) - (h[(y + 1) * cols + x] ?? 0);
+      e += lap * lap;
+      n++;
+    }
+  }
+  return e / Math.max(1, n);
+}
+
+const src = 768;
+const source = carving(src, src);
+const board = { widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 };
+const rows: Record<string, unknown>[] = [];
+
+for (const q of Object.keys(QUALITY) as Quality[]) {
+  const field = fieldCols(q, src);
+  const preview = previewCols(q, false, field);
+  const t0 = Date.now();
+  const raw = carving(field, field);
+  const refined = refineHeight(raw, field, field, { contrast: 1.15, smooth: 0 });
+  const fieldMs = Date.now() - t0;
+  const t1 = Date.now();
+  const mesh = buildRelief(refined, field, field, board);
+  const meshMs = Date.now() - t1;
+  const meshR = validateMesh(mesh);
+  if (!meshR.ok) throw new Error(`${q} mesh: ${meshR.errors.join("; ")}`);
+  const t2 = Date.now();
+  const buf = writeStl(mesh);
+  const stlMs = Date.now() - t2;
+  const stlR = validateStl(buf, mesh);
+  if (!stlR.ok) throw new Error(`${q} stl: ${stlR.errors.join("; ")}`);
+  const stats = analyzeStl(buf);
+  const prevH = resampleHeight(refined, field, field, preview, preview);
+  writeFileSync(`/tmp/carve-${q}.stl`, Buffer.from(buf));
+  rows.push({
+    quality: q,
+    sourceImage: `${src}x${src}`,
+    depthMap: `${field}x${field}`,
+    preview: `${preview}x${preview}`,
+    previewTris: triangleEstimate(preview, preview),
+    exportTris: stats.triangles,
+    stlBytes: stats.bytes,
+    stlMB: +(stats.bytes / 1e6).toFixed(2),
+    sizeMm: stats.size.map((n) => +n.toFixed(3)),
+    z: [+stats.zMin.toFixed(4), +stats.zMax.toFixed(4)],
+    degenerate: stats.degenerate,
+    nan: stats.nan,
+    manifold: meshR.manifold,
+    fieldEnergy: +detailEnergy(refined, field, field).toFixed(6),
+    sourceEnergy: +detailEnergy(source, src, src).toFixed(6),
+    previewEnergy: +detailEnergy(prevH, preview, preview).toFixed(6),
+    fieldMs,
+    meshMs,
+    stlMs,
+    file: `/tmp/carve-${q}.stl`,
+  });
+}
 
 console.log(JSON.stringify({
-  sourceImage: `${src}x${src} synthetic carving`,
-  depthMap: `${depth}x${depth}`,
-  previewHint: "160x160 in UI",
-  exportMesh: `${depth}x${depth}`,
-  physicalMm: [100, 100, stats.size[2]],
-  reliefDepthMm: 3,
-  baseMm: 2,
-  triangles: stats.triangles,
-  uniqueVerts: stats.uniqueVerts,
-  stlBytes: stats.bytes,
-  zMin: stats.zMin,
-  zMax: stats.zMax,
-  zBins: stats.zBins,
-  degenerate: stats.degenerate,
-  nan: stats.nan,
-  meshMs,
-  stlMs,
-  meshOk: meshR.ok,
-  stlOk: stlR.ok,
-  manifold: meshR.manifold,
-  file: out,
+  note: "Extra triangles are extra samples of the same 768 source, not subdivided empty faces. Ultra on a 256px picture would cap at 256.",
+  ultraOn256: fieldCols("ultra", 256),
+  rows,
 }, null, 2));

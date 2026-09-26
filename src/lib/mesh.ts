@@ -8,10 +8,9 @@
  */
 
 export const QUALITY = {
-  draft: { label: "Draft", preview: 96, export: 96 },
-  standard: { label: "Standard", preview: 160, export: 220 },
-  high: { label: "High", preview: 200, export: 480 },
-  ultra: { label: "CNC / Ultra", preview: 200, export: 720 },
+  standard: { label: "Standard", field: 220, preview: 160, previewMobile: 128 },
+  high: { label: "High", field: 512, preview: 280, previewMobile: 200 },
+  ultra: { label: "Ultra", field: 720, preview: 320, previewMobile: 220 },
 } as const;
 
 export type Quality = keyof typeof QUALITY;
@@ -44,12 +43,26 @@ export type ReliefMesh = {
   };
 };
 
-export function previewCols(q: Quality, mobile = false): number {
-  return Math.min(QUALITY[q].preview, mobile ? 128 : 200);
+/** Cap to the source picture so Ultra cannot invent pixels. */
+export function fieldCols(q: Quality, srcMax: number): number {
+  const want = QUALITY[q].field;
+  if (!(srcMax > 0)) return want;
+  return Math.max(8, Math.min(want, Math.round(srcMax)));
 }
 
-export function exportCols(q: Quality): number {
-  return QUALITY[q].export;
+export function previewCols(q: Quality, mobile = false, field = Infinity): number {
+  const cap = mobile ? QUALITY[q].previewMobile : QUALITY[q].preview;
+  return Math.max(8, Math.min(cap, field, QUALITY[q].field));
+}
+
+export function exportCols(q: Quality, srcMax = Infinity): number {
+  return fieldCols(q, srcMax);
+}
+
+export function triangleEstimate(cols: number, rows: number): number {
+  const gx = Math.max(2, cols | 0);
+  const gy = Math.max(2, rows | 0);
+  return (gx - 1) * (gy - 1) * 4 + 4 * (gx + gy - 2);
 }
 
 function addTri(idx: Uint32Array, n: { i: number }, a: number, b: number, c: number) {

@@ -34,6 +34,33 @@ export function sampleHeight(h: Float32Array, cols: number, rows: number, x: num
   return h[r * cols + c] ?? 0;
 }
 
+/** Bilinear resample of the same height field. Preview uses this — it does not rebuild depth. */
+export function resampleHeight(h: Float32Array, cols: number, rows: number, outCols: number, outRows: number): Float32Array {
+  if (outCols === cols && outRows === rows) return h;
+  if (outCols < 2 || outRows < 2) throw new Error("resample too small");
+  const out = new Float32Array(outCols * outRows);
+  const xs = (cols - 1) / (outCols - 1);
+  const ys = (rows - 1) / (outRows - 1);
+  for (let y = 0; y < outRows; y++) {
+    const fy = y * ys;
+    const y0 = Math.min(rows - 1, Math.floor(fy));
+    const y1 = Math.min(rows - 1, y0 + 1);
+    const ty = fy - y0;
+    for (let x = 0; x < outCols; x++) {
+      const fx = x * xs;
+      const x0 = Math.min(cols - 1, Math.floor(fx));
+      const x1 = Math.min(cols - 1, x0 + 1);
+      const tx = fx - x0;
+      const a = h[y0 * cols + x0] ?? 0;
+      const b = h[y0 * cols + x1] ?? 0;
+      const c = h[y1 * cols + x0] ?? 0;
+      const d = h[y1 * cols + x1] ?? 0;
+      out[y * outCols + x] = a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty;
+    }
+  }
+  return out;
+}
+
 export function heightToImageData(h: Float32Array, cols: number, rows: number): ImageData {
   const img = new ImageData(cols, rows);
   for (let i = 0; i < h.length; i++) {
