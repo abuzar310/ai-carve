@@ -7,15 +7,17 @@
     "dev": "vite --host --port 3030",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host --port 3030",
-    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/rlf.check.ts && tsx --no-warnings src/lib/bmp.check.ts && tsx --no-warnings src/lib/tif.check.ts && tsx --no-warnings src/lib/names.check.ts"
+    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/rlf.check.ts && tsx --no-warnings src/lib/bmp.check.ts && tsx --no-warnings src/lib/tif.check.ts && tsx --no-warnings src/lib/names.check.ts && tsx --no-warnings src/lib/mesh.check.ts"
   },
   "dependencies": {
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.0.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

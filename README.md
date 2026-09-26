@@ -2,7 +2,7 @@
 
 Standalone tool. Not part of the Abuzar monorepo.
 
-Picture → one height `.bmp`. The rest is ArtCAM.
+Picture → depth → solid 3D relief (preview + binary `.stl`). Height `.bmp` still available for ArtCAM Open an image.
 
 ```
 cd carve

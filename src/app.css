@@ -39,6 +39,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 }
 
 .shell { max-width: 1080px; margin: 0 auto; padding: 28px 20px 72px }
+select {
+  width: 100%; min-height: 44px; padding: 8px 10px;
+  border: 1px solid #2a2d27; background: #e6e8df;
+  font-family: var(--mono);
+}
 .rail {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
   margin-bottom: 16px;
@@ -113,6 +118,35 @@ h1 {
   transform: translateX(-120%);
 }
 .bar.on > i { animation: shuttle 900ms linear infinite }
+
+.stage {
+  position: relative;
+  margin-top: 10px;
+  min-height: 380px;
+  background: var(--crt);
+  border: 10px solid #2a2d27;
+  box-shadow: inset 0 0 0 1px #0008, 0 1px 0 #fff4;
+  overflow: hidden;
+}
+.stage .gl, .stage canvas { width: 100%; height: 100%; min-height: 380px; display: block; touch-action: none }
+.stage.has-art .gl { animation: rise var(--t-ui) var(--ease-out) both }
+.views {
+  position: absolute; right: 10px; bottom: 10px; z-index: var(--z-tag);
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px;
+  max-width: calc(100% - 20px);
+}
+.views button {
+  min-height: 36px; padding: 0 8px;
+  background: #e6e8df; color: var(--ink); border: 1px solid #2a2d27;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+}
+.views button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink) }
+.stats {
+  margin: 8px 10px 0;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .02em;
+  color: var(--ok);
+}
+.stats.bad { color: var(--err) }
 
 .bench { margin-top: 16px; display: grid; gap: 12px }
 .ask { display: grid; grid-template-columns: 1fr auto auto; gap: 8px }
@@ -190,6 +224,7 @@ input[type="number"] {
 @media (max-width: 760px) {
   .strip { grid-template-columns: 1fr; border-width: 8px }
   .cell, .ph { min-height: 220px }
+  .stage, .stage .gl, .stage canvas { min-height: 280px }
   .cell { border-right: 0; border-bottom: 1px solid #ffffff10 }
   .ask { grid-template-columns: 1fr }
   .go, .ghost { min-height: 48px; width: 100% }
