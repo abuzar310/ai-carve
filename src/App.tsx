@@ -17,11 +17,19 @@ const BIAS = ", ornamental wood carving relief, high contrast, single subject, n
 const nf = new Intl.NumberFormat();
 const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
+type FileMeta = { name: string; size: number; w: number; h: number };
+
 const QUALITY_HINT: Record<Quality, string> = {
   standard: "Draft",
   high: "Shop work",
   ultra: "Finest field",
 };
+
+const RELIEF = [
+  { id: "subtle", label: "Subtle", hint: "Light cut", depth: 1.5 },
+  { id: "balanced", label: "Balanced", hint: "Usual work", depth: 3 },
+  { id: "deep", label: "Deep", hint: "Strong carve", depth: 6 },
+] as const;
 
 const BUILD_STAGES = ["Preparing image", "Generating depth", "Building 3D relief", "Preparing preview"] as const;
 const DRAW_STAGES = ["Generating image", ...BUILD_STAGES] as const;
@@ -72,7 +80,7 @@ function stagesFor(busy: string): readonly string[] {
 export default function App() {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
   const [pic, setPic] = useState("");
-  const [fileMeta, setFileMeta] = useState<{ name: string; size: number } | null>(null);
+  const [fileMeta, setFileMeta] = useState<FileMeta | null>(null);
   const [invert, setInvert] = useState(false);
   const [normalize, setNormalize] = useState(true);
   const [contrast, setContrast] = useState(1.15);
@@ -93,6 +101,7 @@ export default function App() {
   const goView = (kind: "fit" | "front" | "top" | "side" | "persp") => setView((v) => ({ kind, n: v.n + 1 }));
   const depth = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const wellRef = useRef<HTMLElement>(null);
   const mobile = constrainedPreview();
   const shareOk = useMemo(() => canShareFile(), []);
   const [, startTransition] = useTransition();
@@ -106,6 +115,12 @@ export default function App() {
   async function fromImage(src: string) {
     setBusy("Preparing image");
     const img = await loadImage(src);
+    setFileMeta((m) => ({
+      name: m?.name || "Picture",
+      size: m?.size || 0,
+      w: img.naturalWidth || img.width,
+      h: img.naturalHeight || img.height,
+    }));
     setBusy("Generating depth");
     await tick();
     const srcMax = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
@@ -173,7 +188,7 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
       setPic(url);
-      setFileMeta({ name: "Generated image", size: blob.size });
+      setFileMeta({ name: "Generated image", size: blob.size, w: 0, h: 0 });
       await fromImage(url);
     } catch (e) {
       setErr(sayErr(e));
@@ -187,7 +202,7 @@ export default function App() {
     const url = URL.createObjectURL(file);
     if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
     setPic(url);
-    setFileMeta({ name: file.name, size: file.size });
+    setFileMeta({ name: file.name, size: file.size, w: 0, h: 0 });
     try {
       await fromImage(url);
     } catch (e) {
@@ -229,7 +244,6 @@ export default function App() {
   const exportTris = raw ? triangleEstimate(raw.cols, raw.rows) : 0;
   const exportMb = raw ? stlBytesEstimate(exportTris) / 1e6 : 0;
   const thickMm = board.depthMm + board.baseMm;
-  const job = !pic ? "Add a picture to start." : busy ? `${busy}…` : ready ? "Download the STL for ArtCAM." : "Building the relief…";
 
   async function saveStl() {
     if (!refined || !raw) return;
@@ -325,8 +339,31 @@ export default function App() {
     return prompt;
   }
 
+  function newProject() {
+    clearPic();
+    setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
+    setContrast(1.15);
+    setSmooth(0);
+    setInvert(false);
+    setNormalize(true);
+    setQuality("high");
+  }
+
+  async function toggleFull() {
+    const el = wellRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen();
+    } catch {
+      setErr("This browser would not open a fullscreen preview.");
+    }
+  }
+
+  const reliefKind = RELIEF.find((r) => r.depth === board.depthMm)?.id ?? "custom";
   const stageList = stagesFor(busy);
   const exportLabel = shareOk ? "Share / Save STL" : "Download STL";
+  const stageI = stageList.indexOf(busy === "Download ready" ? "Preparing download" : busy);
 
   return (
     <div className="app">
@@ -345,13 +382,16 @@ export default function App() {
         }}
       />
 
-      <header className="top">
-        <div className="brand">
-          <div className="kicker" translate="no">AI Carve</div>
-          <h1 className="word" translate="no">Carve</h1>
-          <p className="lede">Turn a picture into a solid 3D relief and download an STL for ArtCAM.</p>
-          <p className="trust">Pictures stay on this device. Nothing is written to a shop database.</p>
-        </div>
+      <header className="bar">
+        <a className="brand" href="#workspace" translate="no">
+          <span className="kicker">AI Carve</span>
+          <span className="word">Carve</span>
+        </a>
+        <nav className="nav" aria-label="Product">
+          <a href="#workspace">Create</a>
+          <a href="#how">How it works</a>
+          <a href="#help">Help</a>
+        </nav>
         <div className="top-actions">
           <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
             <i />
@@ -365,11 +405,32 @@ export default function App() {
         </div>
       </header>
 
-      {pic ? <p className="job">{job}</p> : null}
+      <main id="workspace" className={"work" + (pic ? " has-source" : "")}>
+        {pic ? (
+          <aside className="source card" aria-label="Source image">
+            <h2>Source</h2>
+            <img src={pic} alt={fileMeta?.name || "Design to carve"} width={fileMeta?.w || 512} height={fileMeta?.h || 512} />
+            <p>{fileMeta?.name || "Picture"}</p>
+            <p className="meta nums">
+              {fileMeta ? bytes(fileMeta.size) : ""}
+              {fileMeta?.w ? ` · ${fileMeta.w} × ${fileMeta.h} px` : ""}
+            </p>
+            <div className="actions two">
+              <button type="button" className="btn ghost" onClick={pickFile} disabled={!!busy}>
+                Replace
+              </button>
+              <button type="button" className="btn ghost" onClick={newProject} disabled={!!busy}>
+                New project
+              </button>
+            </div>
+            <canvas ref={depth} hidden />
+          </aside>
+        ) : null}
 
-      <main id="workspace" className="work">
         <div className="stage">
+        {ready && !busy ? <p className="result">Your 3D relief is ready</p> : null}
         <section
+          ref={wellRef}
           className="well"
           aria-label={mesh ? "3D relief" : "Upload an image"}
           onDragOver={(e) => {
@@ -391,8 +452,8 @@ export default function App() {
           ) : (
             <div className={"drop" + (over ? " on" : "")}>
               <div>
-                <h2>Drop a picture here</h2>
-                <p>Ornament, logo, or photo. Light areas become the raised carving.</p>
+                <h2>Create your 3D relief</h2>
+                <p>Upload an image to begin. Light areas become the raised carving.</p>
                 <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
                   Choose a picture
                 </button>
@@ -418,13 +479,12 @@ export default function App() {
               <div>
                 <strong>{busy}…</strong>
                 <ol className="stages">
-                  {stageList.map((s) => {
-                    const i = stageList.indexOf(busy);
-                    const j = stageList.indexOf(s);
-                    const cls = s === busy || (busy === "Download ready" && s === "Preparing download") ? "on" : j >= 0 && i >= 0 && j < i ? "did" : "";
+                  {stageList.map((s, j) => {
+                    const cls = j === stageI ? "on" : j < stageI ? "did" : "";
+                    const mark = j < stageI ? "✓" : j === stageI ? "●" : "○";
                     return (
                       <li key={s} className={cls}>
-                        {s}
+                        {mark} {s}
                       </li>
                     );
                   })}
@@ -463,103 +523,16 @@ export default function App() {
             <button type="button" className="chip" aria-pressed={tint} onClick={() => setTint((v) => !v)}>
               Tint
             </button>
+            <button type="button" className="chip" onClick={() => void toggleFull()}>
+              Full
+            </button>
           </div>
         ) : null}
         </div>
 
         <aside className="rail">
-          {pic ? (
-            <div className="card">
-              <h3>Image</h3>
-              <div className="thumb">
-                <img src={pic} alt={fileMeta?.name || "Design to carve"} width={72} height={72} />
-                <div>
-                  <p>{fileMeta?.name || "Picture"}</p>
-                  <small>{fileMeta ? bytes(fileMeta.size) : "Ready"}</small>
-                </div>
-                <div className="side">
-                  <button type="button" className="linkish" onClick={pickFile} disabled={!!busy}>
-                    Replace
-                  </button>
-                  <button type="button" className="linkish danger" onClick={clearPic} disabled={!!busy}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-              <canvas ref={depth} hidden />
-            </div>
-          ) : null}
-
           <div className="card">
-            <h3>Model</h3>
-            <div className="pair">
-              <label className="field">
-                <span>
-                  Width <em className="nums">{board.widthMm}&nbsp;mm</em>
-                </span>
-                <div className="slide">
-                  <input type="range" min={20} max={400} step={1} value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
-                  <input type="number" inputMode="decimal" min={1} value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
-                </div>
-              </label>
-              <label className="field">
-                <span>
-                  Height <em className="nums">{board.heightMm}&nbsp;mm</em>
-                </span>
-                <div className="slide">
-                  <input type="range" min={20} max={400} step={1} value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
-                  <input type="number" inputMode="decimal" min={1} value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div className="card">
-            <h3>Relief</h3>
-            <div className="row">
-              <label className="field">
-                <span>
-                  <span className="lab">
-                    Relief depth
-                    <button type="button" className="tip" title="How tall the carving stands above the base. Typical CNC work is 2–6 mm." aria-label="What relief depth means">
-                      ?
-                    </button>
-                  </span>
-                  <em className="nums">{board.depthMm}&nbsp;mm</em>
-                </span>
-                <div className="slide">
-                  <input type="range" min={0.5} max={20} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
-                  <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
-                </div>
-                <small>Raised carving height. The 3D preview updates as you drag.</small>
-              </label>
-              <label className="field">
-                <span>
-                  <span className="lab">
-                    Base thickness
-                    <button type="button" className="tip" title="Solid slab under the carving so the part has a flat bottom for the machine." aria-label="What base thickness means">
-                      ?
-                    </button>
-                  </span>
-                  <em className="nums">{board.baseMm}&nbsp;mm</em>
-                </span>
-                <div className="slide">
-                  <input type="range" min={0.5} max={20} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
-                  <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
-                </div>
-              </label>
-              <label className="toggle">
-                <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
-                Invert depth
-                <button type="button" className="tip" title="Swap high and low. Use this if the subject looks sunk instead of raised." aria-label="What invert depth means">
-                  ?
-                </button>
-              </label>
-            </div>
-          </div>
-
-          <div className="card">
-            <h3>Detail quality</h3>
+            <h3>Detail</h3>
             <div className="seg" role="group" aria-label="Detail quality">
               {(Object.keys(QUALITY) as Quality[]).map((k) => (
                 <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => startTransition(() => setQuality(k))}>
@@ -577,9 +550,56 @@ export default function App() {
             </p>
           </div>
 
+          <div className="card">
+            <h3>Relief</h3>
+            <div className="seg" role="group" aria-label="Relief depth">
+              {RELIEF.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  aria-pressed={reliefKind === r.id}
+                  onClick={() => setBoard((b) => ({ ...b, depthMm: r.depth }))}
+                >
+                  <strong>{r.label}</strong>
+                  <span>{r.hint}</span>
+                </button>
+              ))}
+            </div>
+            <label className="toggle">
+              <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
+              Invert light and dark
+            </label>
+          </div>
+
           <details className="card adv">
-            <summary>Advanced</summary>
+            <summary>Advanced settings</summary>
             <div className="row" style={{ marginTop: 12 }}>
+              <div className="pair">
+                <label className="field">
+                  <span>
+                    Width <em className="nums">{board.widthMm}&nbsp;mm</em>
+                  </span>
+                  <input type="number" inputMode="decimal" min={1} value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
+                </label>
+                <label className="field">
+                  <span>
+                    Height <em className="nums">{board.heightMm}&nbsp;mm</em>
+                  </span>
+                  <input type="number" inputMode="decimal" min={1} value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
+                </label>
+              </div>
+              <label className="field">
+                <span>
+                  Relief depth <em className="nums">{board.depthMm}&nbsp;mm</em>
+                </span>
+                <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
+              </label>
+              <label className="field">
+                <span>
+                  Base thickness <em className="nums">{board.baseMm}&nbsp;mm</em>
+                </span>
+                <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
+              </label>
               <label className="field">
                 <span>
                   Contrast <em>{contrast}</em>
@@ -660,6 +680,11 @@ export default function App() {
               >
                 Reset settings
               </button>
+              {pic ? (
+                <button type="button" className="btn ghost full" onClick={newProject} disabled={!!busy}>
+                  New project
+                </button>
+              ) : null}
             </div>
           </details>
 
@@ -710,7 +735,7 @@ export default function App() {
             ) : (
               <>
                 <h3>Export</h3>
-                <p className="meta">Add a picture first. The STL download appears here when the relief is ready.</p>
+                <p className="meta">{pic ? "The relief is building. Download appears here when it is ready." : "Add a picture first."}</p>
               </>
             )}
           </div>
@@ -732,11 +757,24 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <h2>How Carve works</h2>
-        <p>
-          Light areas rise. Dark areas cut. Set width, height, relief depth, and base, then download an STL for ArtCAM Import 3D Model.
-        </p>
-        <p>Use the height BMP if ArtCAM asks you to open an image. Pictures never leave this browser for a shop database.</p>
+        <div>
+          <h2 id="how">How it works</h2>
+          <p>Add a picture. Light areas rise, dark areas cut. Pick detail and relief, then download an STL for ArtCAM Import 3D Model.</p>
+        </div>
+        <div>
+          <h2 id="help">Help</h2>
+          <p>Use JPG, PNG, or WebP. If the subject looks sunk, invert light and dark. Ultra makes a large file on a sharp photo.</p>
+        </div>
+        <div>
+          <h2 id="privacy">Privacy</h2>
+          <p>Pictures stay in this browser. Carve does not write them to a shop database.</p>
+        </div>
+        <nav className="foot-nav" aria-label="Footer">
+          <a href="#workspace">Create</a>
+          <a href="#how">How it works</a>
+          <a href="#help">Help</a>
+          <a href="#privacy">Privacy</a>
+        </nav>
       </footer>
 
       {ready ? (
