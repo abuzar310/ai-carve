@@ -374,7 +374,7 @@ export default function App() {
         type="file"
         name="source_image"
         autoComplete="off"
-        accept="image/jpeg,image/png,image/webp,image/*"
+        accept="image/jpeg,image/png,image/webp,image/bmp,image/*"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) void onFile(f);
@@ -419,9 +419,9 @@ export default function App() {
               <button type="button" className="btn ghost" onClick={pickFile} disabled={!!busy}>
                 Replace
               </button>
-              <button type="button" className="btn ghost" onClick={newProject} disabled={!!busy}>
-                New project
-              </button>
+                <button type="button" className="btn ghost" onClick={newProject} disabled={!!busy}>
+                  New
+                </button>
             </div>
             <canvas ref={depth} hidden />
           </aside>
