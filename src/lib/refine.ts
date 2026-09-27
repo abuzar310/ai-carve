@@ -1,3 +1,5 @@
+import { normalizeHeight, sharpenHeight } from "./height.ts";
+
 /** Contrast + edge-preserving smooth. Heights stay 0..1. */
 
 export function applyContrast(h: Float32Array, contrast: number): Float32Array {
@@ -40,6 +42,28 @@ export function edgePreserveSmooth(h: Float32Array, cols: number, rows: number, 
 
 function boxBlur(h: Float32Array, cols: number, rows: number): Float32Array {
   return edgePreserveSmooth(h, cols, rows, 1, 2);
+}
+
+/**
+ * Photo noise is blended. A real edge (neighbours differ by more than ~0.2) is kept.
+ * Sharpen runs before normalize so the depth slider still owns the millimetres.
+ */
+export function finishField(
+  h: Float32Array,
+  cols: number,
+  rows: number,
+  opts: { contrast?: number; smooth?: number; normalize?: boolean } = {},
+): Float32Array {
+  let out = edgePreserveSmooth(h, cols, rows, 1, 0.2);
+  out = sharpenHeight(out, cols, rows, 0.3);
+  if (opts.normalize !== false) out = normalizeHeight(out);
+  out = applyContrast(out, opts.contrast ?? 1);
+  const extra = Math.max(0, Math.min(4, Math.round(opts.smooth ?? 0)));
+  if (extra > 0) {
+    out = edgePreserveSmooth(out, cols, rows, extra, 0.12);
+    out = sharpenHeight(out, cols, rows, 0.2);
+  }
+  return out;
 }
 
 export function refineHeight(

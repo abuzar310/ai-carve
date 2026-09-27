@@ -22,14 +22,16 @@ function heightColors(mesh: ReliefMesh, on: boolean): Float32Array {
 }
 
 export function ReliefPreview({
-  mesh,
+  source,
+  rev,
   wireframe,
   showBase,
   tint,
   view,
   viewTick,
 }: {
-  mesh: ReliefMesh;
+  source: { current: ReliefMesh | null };
+  rev: number;
   wireframe: boolean;
   showBase: boolean;
   tint: boolean;
@@ -44,6 +46,7 @@ export function ReliefPreview({
     controls: OrbitControls;
     renderer: THREE.WebGLRenderer;
     host: HTMLDivElement;
+    paint: () => void;
     applyView: (v: View) => void;
     setRange: (show: boolean, top?: number, walls?: number) => void;
   } | null>(null);
@@ -58,7 +61,7 @@ export function ReliefPreview({
     camera.up.set(0, 0, 1);
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: "high-performance" });
     } catch {
       el.classList.add("ph");
       el.textContent = "3D preview unavailable. This browser is not providing WebGL. You can still download the STL.";
@@ -126,7 +129,7 @@ export function ReliefPreview({
     fitSize();
 
     const applyView = (v: View) => {
-      geo.computeBoundingBox();
+      if (!geo.boundingBox) geo.computeBoundingBox();
       const box = geo.boundingBox ?? new THREE.Box3(new THREE.Vector3(-1, -1, 0), new THREE.Vector3(1, 1, 1));
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
@@ -144,23 +147,68 @@ export function ReliefPreview({
       camera.far = maxDim * 40;
       camera.updateProjectionMatrix();
       controls.update();
+      paint();
     };
 
+    const gpuName = String(renderer.getContext().getParameter(renderer.getContext().RENDERER) || "");
+    const software = /swiftshader|llvmpipe|softpipe/i.test(gpuName);
+    if (software) controls.enableDamping = false;
+
+    let dirty = true;
+    let cursor = 0;
+    let sliceTris = software ? 24_000 : Number.POSITIVE_INFINITY;
+    let drawLimit = 0;
+    const paint = () => {
+      dirty = true;
+      cursor = 0;
+      el.dataset.drawn = "0";
+    };
     const setRange = (show: boolean, top = 0, walls = 0) => {
       const n = geo.getIndex()?.count ?? 0;
-      geo.setDrawRange(0, show ? n : Math.max(0, top + walls));
+      drawLimit = show ? n : Math.max(0, top + walls);
+      paint();
     };
-
-    api.current = { geo, mat, camera, controls, renderer, host: el, applyView, setRange };
+    api.current = { geo, mat, camera, controls, renderer, host: el, applyView, setRange, paint };
 
     let raf = 0;
     const tick = () => {
-      controls.update();
-      renderer.render(scene, camera);
       raf = requestAnimationFrame(tick);
+      if (!dirty) {
+        if (controls.update()) paint();
+        return;
+      }
+      const count = geo.getIndex()?.count ?? 0;
+      const limit = drawLimit > 0 ? Math.min(drawLimit, count) : count;
+      if (!count || limit <= 0) return;
+      const room = limit - cursor;
+      const n = Math.min(room, Math.max(3, sliceTris * 3));
+      const t0 = performance.now();
+      geo.setDrawRange(cursor, n);
+      const first = cursor === 0;
+      floor.visible = first;
+      renderer.autoClear = first;
+      if (first) renderer.clear();
+      renderer.render(scene, camera);
+      cursor += n;
+      const dt = performance.now() - t0;
+      if (software) {
+        if (dt < 14) sliceTris = Math.min(1_500_000, Math.round(sliceTris * 1.5));
+        else if (dt > 48) sliceTris = Math.max(6_000, Math.round(sliceTris * 0.65));
+      }
+      if (cursor >= limit) {
+        geo.setDrawRange(0, limit);
+        renderer.autoClear = true;
+        floor.visible = true;
+        dirty = false;
+        cursor = 0;
+        el.dataset.drawn = "1";
+      }
     };
     tick();
-    const ro = new ResizeObserver(fitSize);
+    const ro = new ResizeObserver(() => {
+      fitSize();
+      paint();
+    });
     ro.observe(el);
     return () => {
       cancelAnimationFrame(raf);
@@ -180,35 +228,75 @@ export function ReliefPreview({
 
   useEffect(() => {
     const a = api.current;
-    if (!a) return;
-    a.geo.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
-    a.geo.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
-    a.geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-    a.geo.computeBoundingBox();
-    a.geo.computeBoundingSphere();
+    const mesh = source.current;
+    if (!a || !mesh) return;
+    const put = (name: string, itemSize: number, data: Float32Array) => {
+      const prev = a.geo.getAttribute(name);
+      if (prev && prev.array.length === data.length) {
+        (prev.array as Float32Array).set(data);
+        prev.needsUpdate = true;
+        return;
+      }
+      a.geo.setAttribute(name, new THREE.BufferAttribute(data, itemSize));
+    };
+    put("position", 3, mesh.positions);
+    put("normal", 3, mesh.normals);
+    const prevIndex = a.geo.getIndex();
+    if (!prevIndex || prevIndex.array.length !== mesh.indices.length) {
+      a.geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+    }
+    const { widthMm, heightMm, zMax } = mesh.meta;
+    a.geo.boundingBox = new THREE.Box3(
+      new THREE.Vector3(-widthMm / 2, -heightMm / 2, 0),
+      new THREE.Vector3(widthMm / 2, heightMm / 2, zMax),
+    );
+    a.geo.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(0, 0, zMax / 2),
+      0.5 * Math.hypot(widthMm, heightMm, zMax),
+    );
     const ratio = mesh.meta.triangleCount > 1_500_000 ? 1 : Math.min(1.5, window.devicePixelRatio || 1);
     a.renderer.setPixelRatio(ratio);
     const w = a.host.clientWidth;
     const h = a.host.clientHeight;
     if (w > 8 && h > 8) a.renderer.setSize(w, h, false);
-  }, [mesh]);
+    a.host.dataset.w = String(widthMm);
+    a.host.dataset.h = String(heightMm);
+    a.host.dataset.z = String(Math.round(zMax * 100) / 100);
+    a.paint();
+  }, [rev, source]);
 
   useEffect(() => {
     const a = api.current;
     if (!a) return;
-    a.geo.setAttribute("color", new THREE.BufferAttribute(heightColors(mesh, tint), 3));
-  }, [tint, mesh]);
+    const mesh = source.current;
+    if (!mesh) return;
+    const colors = heightColors(mesh, tint);
+    const prev = a.geo.getAttribute("color");
+    if (prev && prev.array.length === colors.length) {
+      (prev.array as Float32Array).set(colors);
+      prev.needsUpdate = true;
+    } else {
+      a.geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    }
+    a.paint();
+  }, [tint, rev, source]);
 
   useEffect(() => {
     const a = api.current;
     if (!a) return;
     a.mat.wireframe = wireframe;
     a.mat.needsUpdate = true;
+    a.paint();
   }, [wireframe]);
 
   useEffect(() => {
-    api.current?.setRange(showBase, mesh.ranges.top, mesh.ranges.walls);
-  }, [showBase, mesh]);
+    const a = api.current;
+    if (!a) return;
+    const mesh = source.current;
+    if (!mesh) return;
+    a.setRange(showBase, mesh.ranges.top, mesh.ranges.walls);
+    a.paint();
+  }, [showBase, rev, source]);
 
   useEffect(() => {
     api.current?.applyView(view);

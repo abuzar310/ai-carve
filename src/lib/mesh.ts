@@ -43,11 +43,19 @@ export type ReliefMesh = {
   };
 };
 
-/** Cap to the source picture so a preset cannot invent pixels. High is 1024 on a large square. */
+/**
+ * High is the production grid: 1024 on the long side, including when the
+ * picture is smaller. Those extra samples only interpolate the original
+ * pixels. Ultra keeps more of a picture that is already larger than 1024,
+ * and never enlarges one that is not. Standard is the explicit smaller file.
+ */
 export function fieldCols(q: Quality, srcMax: number): number {
   const want = QUALITY[q].field;
+  if (q === "high") return want;
   if (!(srcMax > 0)) return want;
-  return Math.max(8, Math.min(want, Math.round(srcMax)));
+  const src = Math.round(srcMax);
+  if (q === "ultra") return src <= 1024 ? 1024 : Math.min(want, src);
+  return want;
 }
 
 export function constrainedPreview(): boolean {
@@ -164,7 +172,8 @@ export function buildRelief(h: Float32Array, cols: number, rows: number, opts: R
   }
   if (n.i !== indices.length) throw new Error("index fill mismatch");
 
-  const normals = vertexNormals(positions, indices);
+  const normals = new Float32Array(positions.length);
+  fillVertexNormals(positions, indices, normals);
   return {
     positions,
     indices,
@@ -206,8 +215,63 @@ export function faceNormal(
   return [nx / len, ny / len, nz / len, area2 * 0.5];
 }
 
+/** Rewrite millimetres on an existing solid. Indices stay; preview and STL keep this mesh. */
+export function restampRelief(mesh: ReliefMesh, h: Float32Array, opts: ReliefOpts): void {
+  const gx = mesh.meta.cols;
+  const gy = mesh.meta.rows;
+  if (h.length < gx * gy) throw new Error("height short");
+  const widthMm = opts.widthMm;
+  const heightMm = opts.heightMm;
+  const depthMm = Math.max(0, opts.depthMm);
+  const baseMm = Math.max(0.01, opts.baseMm);
+  if (!(widthMm > 0) || !(heightMm > 0)) throw new Error("board size must be > 0");
+  const layer = gx * gy;
+  const dx = widthMm / (gx - 1);
+  const dy = heightMm / (gy - 1);
+  const x0 = -widthMm / 2;
+  const y0 = -heightMm / 2;
+  const positions = mesh.positions;
+  let topZMin = Infinity;
+  let topZMax = -Infinity;
+  for (let y = 0; y < gy; y++) {
+    for (let x = 0; x < gx; x++) {
+      const px = x0 + x * dx;
+      const py = y0 + (gy - 1 - y) * dy;
+      const z = baseMm + (h[y * gx + x] ?? 0) * depthMm;
+      if (z < topZMin) topZMin = z;
+      if (z > topZMax) topZMax = z;
+      const t = (y * gx + x) * 3;
+      const b = (layer + y * gx + x) * 3;
+      positions[t] = px;
+      positions[t + 1] = py;
+      positions[t + 2] = z;
+      positions[b] = px;
+      positions[b + 1] = py;
+      positions[b + 2] = 0;
+    }
+  }
+  fillVertexNormals(positions, mesh.indices, mesh.normals);
+  mesh.meta = {
+    ...mesh.meta,
+    widthMm,
+    heightMm,
+    depthMm,
+    baseMm,
+    zMin: 0,
+    zMax: topZMax,
+    topZMin,
+    topZMax,
+  };
+}
+
 export function vertexNormals(positions: Float32Array, indices: Uint32Array): Float32Array {
   const normals = new Float32Array(positions.length);
+  fillVertexNormals(positions, indices, normals);
+  return normals;
+}
+
+function fillVertexNormals(positions: Float32Array, indices: Uint32Array, normals: Float32Array) {
+  normals.fill(0);
   for (let i = 0; i < indices.length; i += 3) {
     const ia = indices[i]! * 3;
     const ib = indices[i + 1]! * 3;

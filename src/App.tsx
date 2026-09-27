@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { heightToImageData, normalizeHeight, rasterFromImage, sharpenHeight } from "./lib/height";
-import { refineHeight } from "./lib/refine";
-import { QUALITY, buildRelief, constrainedPreview, fieldCols, triangleEstimate, type Quality } from "./lib/mesh";
+import { heightToImageData, rasterFromImage } from "./lib/height";
+import { finishField } from "./lib/refine";
+import { QUALITY, buildRelief, constrainedPreview, fieldCols, restampRelief, triangleEstimate, type Quality, type ReliefMesh } from "./lib/mesh";
 import { writeStlAsync } from "./lib/stl";
-import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl } from "./lib/validate";
+import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl, type MeshReport } from "./lib/validate";
 import { reliefBmp } from "./lib/bmp";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
@@ -20,9 +20,9 @@ const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 type FileMeta = { name: string; size: number; w: number; h: number };
 
 const QUALITY_HINT: Record<Quality, string> = {
-  standard: "Smaller file",
-  high: "Shop work",
-  ultra: "Finest field",
+  standard: "512 file",
+  high: "1024 grid",
+  ultra: "Large pictures",
 };
 
 const RELIEF = [
@@ -126,10 +126,8 @@ export default function App() {
     const srcMax = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
     const cols = fieldCols(quality, srcMax);
     const next = await rasterFromImage(img, cols, invert);
-    let height = normalize ? normalizeHeight(next.height) : next.height;
-    if (srcMax > cols + 1) height = sharpenHeight(height, next.cols, next.rows, 0.45);
     setBusy("Building 3D relief");
-    setRaw({ height, cols: next.cols, rows: next.rows });
+    setRaw({ height: next.height, cols: next.cols, rows: next.rows });
     setCutPass((n) => n + 1);
     setView((v) => ({ kind: "persp", n: v.n + 1 }));
     setBusy("Preparing preview");
@@ -137,15 +135,62 @@ export default function App() {
     setBusy("");
   }
 
+  const [fieldOpts, setFieldOpts] = useState({ contrast, smooth, normalize });
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setFieldOpts((prev) =>
+        prev.contrast === contrast && prev.smooth === smooth && prev.normalize === normalize
+          ? prev
+          : { contrast, smooth, normalize },
+      );
+    }, 180);
+    return () => window.clearTimeout(t);
+  }, [contrast, smooth, normalize]);
+
   const refined = useMemo(
-    () => (raw ? refineHeight(raw.height, raw.cols, raw.rows, { contrast, smooth }) : null),
-    [raw, contrast, smooth],
+    () => (raw ? finishField(raw.height, raw.cols, raw.rows, fieldOpts) : null),
+    [raw, fieldOpts],
   );
 
-  const mesh = useMemo(
-    () => (raw && refined ? buildRelief(refined, raw.cols, raw.rows, board) : null),
-    [raw, refined, board],
-  );
+  const [meshBoard, setMeshBoard] = useState(board);
+  useEffect(() => {
+    const t = window.setTimeout(() => setMeshBoard(board), 180);
+    return () => window.clearTimeout(t);
+  }, [board]);
+
+  const meshRef = useRef<ReliefMesh | null>(null);
+  const [rev, setRev] = useState(0);
+  const [verdict, setVerdict] = useState<MeshReport | null>(null);
+  const mesh = rev > 0 ? meshRef.current : null;
+
+  useEffect(() => {
+    if (!raw || !refined) {
+      meshRef.current = null;
+      setVerdict(null);
+      setRev((n) => n + 1);
+      return;
+    }
+    const prev = meshRef.current;
+    let built: ReliefMesh;
+    if (prev && prev.meta.cols === raw.cols && prev.meta.rows === raw.rows) {
+      restampRelief(prev, refined, meshBoard);
+      built = prev;
+    } else {
+      built = buildRelief(refined, raw.cols, raw.rows, meshBoard);
+      meshRef.current = built;
+    }
+    setVerdict(built.meta.triangleCount > FULL_TOPOLOGY_TRIS ? validateMeshQuick(built) : validateMesh(built));
+    setRev((n) => n + 1);
+  }, [raw, refined, meshBoard]);
+
+  const meshLag =
+    meshBoard.widthMm !== board.widthMm ||
+    meshBoard.heightMm !== board.heightMm ||
+    meshBoard.depthMm !== board.depthMm ||
+    meshBoard.baseMm !== board.baseMm ||
+    fieldOpts.contrast !== contrast ||
+    fieldOpts.smooth !== smooth ||
+    fieldOpts.normalize !== normalize;
 
   async function generate() {
     setErr("");
@@ -219,9 +264,9 @@ export default function App() {
       setErr(sayErr(e));
       setBusy("");
     });
-    // invert / normalize / quality rebuilds depth from the same picture
+    // invert and quality rebuild the raster. Strength and size stay on the same field.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invert, normalize, quality]);
+  }, [invert, quality]);
 
   useEffect(() => {
     const canvas = depth.current;
@@ -286,6 +331,11 @@ export default function App() {
 
   function requestStl() {
     if (!raw) return;
+    if (meshLag) return;
+    if (verdict && !verdict.ok) {
+      setErr(verdict.errors[0] || "This relief did not pass the solid check, so the STL was not saved.");
+      return;
+    }
     const tris = triangleEstimate(raw.cols, raw.rows);
     const mb = stlBytesEstimate(tris) / 1e6;
     if (mb >= 80) {
@@ -411,7 +461,7 @@ export default function App() {
             {busy ? `${busy}…` : ready ? "Ready" : "Add a picture"}
           </div>
           {ready ? (
-            <button type="button" className="btn pri hide-phone" disabled={!!busy} onClick={() => requestStl()}>
+            <button type="button" className="btn pri hide-phone" disabled={!!busy || meshLag || verdict?.ok === false} onClick={() => requestStl()}>
               {exportLabel}
             </button>
           ) : null}
@@ -497,7 +547,7 @@ export default function App() {
         >
           {mesh ? (
             <Suspense fallback={<div className="gl ph">Loading 3D preview…</div>}>
-              <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
+              <ReliefPreview key={cutPass} source={meshRef} rev={rev} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
             </Suspense>
           ) : pic ? (
             <div className="drop">
@@ -531,13 +581,8 @@ export default function App() {
           {mesh ? (
             <div className="info nums">
               <b>
-                {QUALITY[quality].label} · {board.widthMm} × {board.heightMm}&nbsp;mm
+                {board.widthMm} × {board.heightMm} × {thickMm}&nbsp;mm
               </b>
-              <br />
-              Relief {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm · Overall {thickMm}&nbsp;mm
-              <br />
-              {nf.format(mesh.meta.triangleCount)} triangles · {raw?.cols} × {raw?.rows} samples · ~
-              {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}
             </div>
           ) : null}
 
@@ -600,28 +645,6 @@ export default function App() {
 
         <aside className="rail">
           <div className="card">
-            <h3>Detail</h3>
-            <div className="seg" role="group" aria-label="Detail quality">
-              {(Object.keys(QUALITY) as Quality[]).map((k) => (
-                <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => startTransition(() => setQuality(k))}>
-                  <strong>{QUALITY[k].label}</strong>
-                  <span>{QUALITY_HINT[k]}</span>
-                </button>
-              ))}
-            </div>
-            <p className="meta" style={{ marginTop: 10 }}>
-              {quality === "ultra"
-                ? "Up to 1280 samples across the picture. Large STL."
-                : quality === "high"
-                  ? "Up to 1024 samples. Preview and STL are the same relief."
-                  : "Up to 512 samples. Smaller file, same solid."}
-            </p>
-            {mobile && raw && raw.cols >= 700 ? (
-              <p className="meta">This preview is the full relief. Saving the STL is easier on a computer.</p>
-            ) : null}
-          </div>
-
-          <div className="card">
             <h3>Relief</h3>
             <div className="seg" role="group" aria-label="Relief depth">
               {RELIEF.map((r) => (
@@ -653,6 +676,24 @@ export default function App() {
           <details className="card adv">
             <summary>Advanced settings</summary>
             <div className="row" style={{ marginTop: 12 }}>
+              <div>
+                <h3>Resolution</h3>
+                <div className="seg" role="group" aria-label="Resolution">
+                  {(Object.keys(QUALITY) as Quality[]).map((k) => (
+                    <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => startTransition(() => setQuality(k))}>
+                      <strong>{QUALITY[k].label}</strong>
+                      <span>{QUALITY_HINT[k]}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="meta" style={{ marginTop: 8 }}>
+                  {quality === "high"
+                    ? "1024 across the picture. A smaller photo is placed on that grid. It does not gain new detail."
+                    : quality === "ultra"
+                      ? "Keeps up to 1280 from a picture that is already larger than 1024."
+                      : "Explicit 512 grid. Same solid, smaller file."}
+                </p>
+              </div>
               <div className="pair">
                 <label className="field">
                   <span>
@@ -763,7 +804,7 @@ export default function App() {
                     }}
                   />
                 </div>
-                <small>0 keeps sharp edges. Higher values soften the relief.</small>
+                <small>Leave this at 0 for a light cleanup. Higher values soften the ornament.</small>
               </label>
               <button
                 type="button"
@@ -814,16 +855,24 @@ export default function App() {
           <div className="card">
             {ready ? (
               <>
-                <p className="ready-title">Ready to export</p>
+                <p className="ready-title">{verdict?.ok ? "STL valid" : "Check the relief"}</p>
                 <p className="export-dim nums">
-                  STL · {board.widthMm} × {board.heightMm} × {thickMm}&nbsp;mm
+                  {board.widthMm} × {board.heightMm} × {thickMm}&nbsp;mm
                 </p>
                 <p className="meta nums">
-                  {QUALITY[quality].label} · ~{trisLabel(exportTris)} triangles · ~
+                  Relief {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm
+                  <br />
+                  {raw?.cols} × {raw?.rows}
+                  <br />
+                  {mesh ? nf.format(mesh.meta.triangleCount) : trisLabel(exportTris)} triangles ·{" "}
                   {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}
                 </p>
+                {verdict && !verdict.ok ? <p className="meta">{verdict.errors[0]}</p> : null}
+                {mobile && raw && raw.cols >= 700 ? (
+                  <p className="meta">This preview is the full relief. Saving the STL is easier on a computer.</p>
+                ) : null}
                 <div className="actions" style={{ marginTop: 12 }}>
-                  <button type="button" className="btn pri full hide-phone" disabled={!!busy} onClick={() => requestStl()}>
+                  <button type="button" className="btn pri full hide-phone" disabled={!!busy || meshLag || verdict?.ok === false} onClick={() => requestStl()}>
                     {exportLabel}
                   </button>
                   <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveArtcam()}>
@@ -902,7 +951,7 @@ export default function App() {
 
       {ready ? (
         <div className="sticky">
-          <button type="button" className="btn pri full" disabled={!!busy} onClick={() => requestStl()}>
+          <button type="button" className="btn pri full" disabled={!!busy || meshLag || verdict?.ok === false} onClick={() => requestStl()}>
             {exportLabel}
           </button>
         </div>

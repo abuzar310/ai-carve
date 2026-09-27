@@ -1,6 +1,6 @@
 import { pixelsToHeight, normalizeHeight } from "./height.ts";
-import { refineHeight } from "./refine.ts";
-import { buildRelief, fieldCols, previewCols, triangleEstimate } from "./mesh.ts";
+import { finishField, refineHeight } from "./refine.ts";
+import { buildRelief, fieldCols, previewCols, restampRelief, triangleEstimate } from "./mesh.ts";
 import { analyzeStl, parseStl, writeStl, writeStlAsync } from "./stl.ts";
 import { validateMesh, validateMeshQuick, validateStl } from "./validate.ts";
 
@@ -94,9 +94,10 @@ const perfR = validateStl(perfBuf, perfMesh);
 ok(perfR.ok, `perf stl ${perfR.errors.join("; ")}`);
 ok(perfMesh.meta.triangleCount > 50_000, "preview-scale density");
 ok(perfBuf.byteLength === 84 + perfMesh.meta.triangleCount * 50, "binary size");
-ok(fieldCols("ultra", 256) === 256, "ultra does not invent pixels");
-ok(fieldCols("high", 2000) === 1024 && fieldCols("standard", 2000) === 512 && fieldCols("ultra", 2000) === 1280, "quality caps");
-ok(fieldCols("high", 768) === 768, "high keeps a smaller source");
+ok(fieldCols("high", 96) === 1024 && fieldCols("high", 768) === 1024 && fieldCols("high", 4000) === 1024, "high is the 1024 grid");
+ok(fieldCols("standard", 4000) === 512, "standard is the explicit smaller grid");
+ok(fieldCols("ultra", 256) === 1024, "ultra does not enlarge a small picture past 1024");
+ok(fieldCols("ultra", 1100) === 1100 && fieldCols("ultra", 4000) === 1280, "ultra keeps extra detail only from a larger picture");
 ok(previewCols("high", true, 1024) === 1024, "preview grid matches the export field");
 ok(previewCols("standard", true, 4000) === 512, "preview does not drop to a phone thumbnail");
 ok(triangleEstimate(220, 220) === 193596, "standard triangle estimate");
@@ -170,6 +171,27 @@ for (let i = 0; i < hi.positions.length; i += 997) {
   if (!Number.isFinite(hi.positions[i]!)) finite = false;
 }
 ok(finite, "1024 positions finite");
+
+const step = new Float32Array(32 * 32);
+for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) step[y * 32 + x] = x < 16 ? 0 : 1;
+const kept = finishField(step, 32, 32, { contrast: 1, smooth: 0, normalize: true });
+ok((kept[0] ?? 1) < 0.08 && (kept[31] ?? 0) > 0.92, "finish keeps a hard edge");
+const mild = finishField(grid("gradient", 32, 32), 32, 32, { contrast: 0.55, smooth: 0, normalize: true });
+const hard = finishField(grid("gradient", 32, 32), 32, 32, { contrast: 2.4, smooth: 0, normalize: true });
+ok(Math.abs((mild[32 * 16 + 8] ?? 0) - (hard[32 * 16 + 8] ?? 0)) > 0.05, "depth strength moves a mid height");
+const deep = buildRelief(mild, 32, 32, { widthMm: 180, heightMm: 70, depthMm: 9, baseMm: 4 });
+const deepR = validateMesh(deep);
+ok(deepR.ok, `resized solid ${deepR.errors.join("; ")}`);
+ok(Math.abs(deepR.size[0] - 180) < 0.05 && Math.abs(deepR.size[1] - 70) < 0.05, "width and height follow settings");
+let peak = 0;
+for (const v of mild) if (v > peak) peak = v;
+ok(Math.abs(deep.meta.zMin) < 0.001 && Math.abs(deep.meta.zMax - (4 + 9 * peak)) < 0.05, `base plus relief ${deep.meta.zMax}`);
+const shallow = buildRelief(mild, 32, 32, { widthMm: 180, heightMm: 70, depthMm: 1.5, baseMm: 4 });
+ok(shallow.meta.zMax < deep.meta.zMax - 3, "relief depth changes Z");
+const sameArrays = shallow.positions;
+restampRelief(shallow, mild, { widthMm: 180, heightMm: 70, depthMm: 9, baseMm: 4 });
+ok(shallow.positions === sameArrays && shallow.indices.length === deep.indices.length, "restamp keeps the same triangles");
+ok(Math.abs(shallow.meta.zMax - deep.meta.zMax) < 0.05 && Math.abs(shallow.meta.widthMm - 180) < 0.001, "restamp applies the new millimetres");
 
 console.log(
   `carve mesh.check OK (${n} assertions) · 160² ${perfMesh.meta.triangleCount} tris · ${(perfBuf.byteLength / 1e6).toFixed(2)} MB · ${perfMs} ms · 1024² ${hi.meta.triangleCount} tris · ${((84 + hi.meta.triangleCount * 50) / 1e6).toFixed(1)} MB stl`,
