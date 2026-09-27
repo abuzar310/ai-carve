@@ -300,7 +300,7 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
 @media (max-width: 900px) {
   .work { grid-template-columns: 1fr }
   .source { grid-column: auto; grid-template-columns: 1fr }
-  .source img { max-height: 220px }
+  .source img { max-height: 160px }
   .well, .well .gl, .well .gl canvas, .drop { min-height: 360px }
   .bar { flex-wrap: wrap; gap: 8px }
   .nav { margin-left: 0; width: 100%; gap: 12px }
