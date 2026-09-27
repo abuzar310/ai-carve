@@ -19,7 +19,8 @@ export function sourceStem(raw: string): string {
 }
 
 /** STL / BMP named after the picture (or prompt), plus size. */
-export function artcamNames(source: string, widthMm: number, heightMm: number, depthMm: number) {
-  const stem = `${sourceStem(source)}-${dim(widthMm)}x${dim(heightMm)}-${dim(depthMm)}mm`;
+export function artcamNames(source: string, widthMm: number, heightMm: number, depthMm: number, baseMm = 0) {
+  const base = baseMm > 0 ? `-base${dim(baseMm)}mm` : "";
+  const stem = `${sourceStem(source)}-${dim(widthMm)}x${dim(heightMm)}-${dim(depthMm)}mm${base}`;
   return { bmp: `${stem}.bmp`, stl: `${stem}.stl` };
 }

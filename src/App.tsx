@@ -3,7 +3,7 @@ import { heightToImageData, rasterFromImage } from "./lib/height";
 import { applyContrast } from "./lib/refine";
 import { composeRelief } from "./lib/relief";
 import { estimateDepth } from "./lib/depth";
-import { QUALITY, buildRelief, constrainedPreview, fieldCols, restampRelief, triangleEstimate, type Quality, type ReliefMesh } from "./lib/mesh";
+import { QUALITY, buildRelief, constrainedPreview, fieldCols, isSurfaceOnly, restampRelief, triangleEstimate, type Quality, type ReliefMesh } from "./lib/mesh";
 import { writeStlAsync } from "./lib/stl";
 import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl, type MeshReport } from "./lib/validate";
 import { reliefBmp } from "./lib/bmp";
@@ -97,7 +97,7 @@ export default function App() {
   const [over, setOver] = useState(false);
   const [cutPass, setCutPass] = useState(0);
   const [raw, setRaw] = useState<{ height: Float32Array; depth: Float32Array | null; cols: number; rows: number } | null>(null);
-  const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
+  const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
   const [wireframe, setWireframe] = useState(false);
   const [showBase, setShowBase] = useState(true);
   const [view, setView] = useState<{ kind: "fit" | "front" | "top" | "side" | "persp"; n: number }>({ kind: "persp", n: 0 });
@@ -191,7 +191,12 @@ export default function App() {
     }
     const prev = meshRef.current;
     let built: ReliefMesh;
-    if (prev && prev.meta.cols === raw.cols && prev.meta.rows === raw.rows) {
+    if (
+      prev &&
+      prev.meta.cols === raw.cols &&
+      prev.meta.rows === raw.rows &&
+      isSurfaceOnly(prev.meta.baseMm) === isSurfaceOnly(meshBoard.baseMm)
+    ) {
       restampRelief(prev, refined, meshBoard);
       built = prev;
     } else {
@@ -298,7 +303,7 @@ export default function App() {
   }, [refined, raw]);
 
   const ready = !!mesh;
-  const exportTris = raw ? triangleEstimate(raw.cols, raw.rows) : 0;
+  const exportTris = raw ? triangleEstimate(raw.cols, raw.rows, isSurfaceOnly(board.baseMm)) : 0;
   const exportMb = raw ? stlBytesEstimate(exportTris) / 1e6 : 0;
   const thickMm = board.depthMm + board.baseMm;
 
@@ -330,13 +335,16 @@ export default function App() {
       setBusy("Validating");
       await tick();
       const expected = out.meta.triangleCount;
-      const stlR = expected > FULL_TOPOLOGY_TRIS ? validateStl(buf) : validateStl(buf, out);
+      const stlR =
+        expected > FULL_TOPOLOGY_TRIS
+          ? validateStl(buf, undefined, { surfaceOnly: isSurfaceOnly(mesh.meta.baseMm) })
+          : validateStl(buf, out);
       if (stlR.triangles !== expected) throw new Error("STL count != mesh");
       if (!stlR.ok) throw new Error(stlR.errors[0] || "STL invalid");
       out = null;
       setBusy("Preparing download");
       await tick();
-      const { stl } = artcamNames(exportSource(), board.widthMm, board.heightMm, board.depthMm);
+      const { stl } = artcamNames(exportSource(), board.widthMm, board.heightMm, board.depthMm, board.baseMm);
       const blob = new Blob([buf], { type: "model/stl" });
       setBusy("Download ready");
       const how = await saveFile(stl, blob, "model/stl");
@@ -360,7 +368,7 @@ export default function App() {
       setErr(verdict.errors[0] || "This relief did not pass the solid check, so the STL was not saved.");
       return;
     }
-    const tris = triangleEstimate(raw.cols, raw.rows);
+    const tris = triangleEstimate(raw.cols, raw.rows, isSurfaceOnly(board.baseMm));
     const mb = stlBytesEstimate(tris) / 1e6;
     if (mb >= 80) {
       setWarn({ mb, tris });
@@ -378,7 +386,7 @@ export default function App() {
       const h = refined ?? raw.height;
       const c = raw.cols;
       const r = raw.rows;
-      const { bmp } = artcamNames(exportSource(), board.widthMm, board.heightMm, board.depthMm);
+      const { bmp } = artcamNames(exportSource(), board.widthMm, board.heightMm, board.depthMm, board.baseMm);
       await saveFile(bmp, new Blob([reliefBmp(h, c, r, board.widthMm, board.heightMm) as BlobPart], { type: "image/bmp" }), "image/bmp");
       setNote("Height map downloaded. Use this if ArtCAM asks to open an image.");
     } catch (e) {
@@ -390,7 +398,7 @@ export default function App() {
 
   function setNum(key: keyof typeof board, rawVal: string) {
     const n = Number(rawVal);
-    if (!Number.isFinite(n) || n <= 0) return;
+    if (!Number.isFinite(n) || n < 0 || (n === 0 && key !== "baseMm")) return;
     setBoard((b) => ({ ...b, [key]: n }));
   }
 
@@ -406,7 +414,7 @@ export default function App() {
 
   function newProject() {
     clearPic();
-    setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
+    setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
     setContrast(1.15);
     setClean(0.5);
     setDetail(0.35);
@@ -744,7 +752,8 @@ export default function App() {
                 <span>
                   Base thickness <em className="nums">{board.baseMm}&nbsp;mm</em>
                 </span>
-                <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
+                <input type="number" inputMode="decimal" min={0} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
+                <small>0 = relief surface only, ready for ArtCAM / Aspire. Add a base only for 3D printing.</small>
               </label>
               <label className="field">
                 <span>
@@ -898,7 +907,7 @@ export default function App() {
                 type="button"
                 className="btn ghost full"
                 onClick={() => {
-                  setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
+                  setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
                   setContrast(1.15);
                   setClean(0.5);
                   setDetail(0.35);
@@ -950,7 +959,7 @@ export default function App() {
                   {board.widthMm} × {board.heightMm} × {thickMm}&nbsp;mm
                 </p>
                 <p className="meta nums">
-                  Relief {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm
+                  Relief {board.depthMm}&nbsp;mm · {board.baseMm > 0 ? <>Base {board.baseMm}&nbsp;mm</> : "No base (surface only)"}
                   <br />
                   {raw?.cols} × {raw?.rows}
                   <br />

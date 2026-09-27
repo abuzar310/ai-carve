@@ -88,13 +88,14 @@ function dimErrors(mesh: ReliefMesh, minX: number, minY: number, minZ: number, m
 /** Streamed geometry checks. No string Maps. Safe for 720² Ultra. */
 export function validateMeshQuick(mesh: ReliefMesh): MeshReport {
   const g = bboxAndFaces(mesh);
+  const solid = mesh.meta.baseMm > 0; // base 0 = surface-only export, open rim by design
   const errors = [...g.errors, ...dimErrors(mesh, g.minX, g.minY, g.minZ, g.maxX, g.maxY, g.maxZ)];
   const hasBase = g.minZ <= 0.05 && g.maxZ - g.minZ >= mesh.meta.baseMm * 0.9;
   const hasSides = g.side > 0;
   const hasBottom = g.bottom > 0;
   if (!hasBase) errors.push("missing base");
-  if (!hasSides) errors.push("missing side walls");
-  if (!hasBottom) errors.push("missing bottom");
+  if (solid && !hasSides) errors.push("missing side walls");
+  if (solid && !hasBottom) errors.push("missing bottom");
   if (g.up < 1) errors.push("no upward faces (relief)");
   return {
     ok: errors.length === 0,
@@ -118,6 +119,7 @@ export function validateMeshQuick(mesh: ReliefMesh): MeshReport {
 export function validateMesh(mesh: ReliefMesh): MeshReport {
   if (mesh.meta.triangleCount > FULL_TOPOLOGY_TRIS) return validateMeshQuick(mesh);
   const g = bboxAndFaces(mesh);
+  const solid = mesh.meta.baseMm > 0; // base 0 = surface-only export, open rim by design
   const errors = [...g.errors, ...dimErrors(mesh, g.minX, g.minY, g.minZ, g.maxX, g.maxY, g.maxZ)];
   const { positions, indices } = mesh;
   const undirected = new Map<string, number>();
@@ -160,17 +162,20 @@ export function validateMesh(mesh: ReliefMesh): MeshReport {
     const [a, b] = u.split("~");
     if ((directed.get(`${a}>${b}`) ?? 0) && (directed.get(`${b}>${a}`) ?? 0)) opposite++;
   }
-  const manifold = open === 0 && over === 0 && opposite === undirected.size;
+  const manifold = over === 0 && opposite === undirected.size - open && (!solid || open === 0);
   if (!manifold) errors.push(`not edge-manifold (open ${open}, overused ${over})`);
+  // Only vertices a triangle uses count (surface-only export leaves the unused base ring out).
+  const used = new Set<string>();
+  for (let i = 0; i < indices.length; i++) used.add(keys[indices[i]!]!);
   const roots = new Set<string>();
-  for (const k of parent.keys()) roots.add(find(k));
+  for (const k of used) roots.add(find(k));
   if (roots.size !== 1) errors.push(`${roots.size} disconnected components`);
   const hasBase = g.minZ <= 0.05 && g.maxZ - g.minZ >= mesh.meta.baseMm * 0.9;
   const hasSides = g.side > 0;
   const hasBottom = g.bottom > 0;
   if (!hasBase) errors.push("missing base");
-  if (!hasSides) errors.push("missing side walls");
-  if (!hasBottom) errors.push("missing bottom");
+  if (solid && !hasSides) errors.push("missing side walls");
+  if (solid && !hasBottom) errors.push("missing bottom");
   return {
     ok: errors.length === 0,
     errors,
@@ -190,7 +195,7 @@ export function validateMesh(mesh: ReliefMesh): MeshReport {
   };
 }
 
-export function validateStl(buf: ArrayBuffer | Uint8Array, mesh?: ReliefMesh): MeshReport {
+export function validateStl(buf: ArrayBuffer | Uint8Array, mesh?: ReliefMesh, opts: { surfaceOnly?: boolean } = {}): MeshReport {
   const parsed = parseStl(buf);
   const scan = scanStl(buf);
   const errors: string[] = [];
@@ -198,7 +203,8 @@ export function validateStl(buf: ArrayBuffer | Uint8Array, mesh?: ReliefMesh): M
   if (scan.inf) errors.push(`${scan.inf} non-finite`);
   if (scan.degenerate) errors.push(`${scan.degenerate} degenerate`);
   if (mesh && parsed.count !== mesh.meta.triangleCount) errors.push("STL count != mesh");
-  if (scan.nzNeg < 1) errors.push("no downward faces (bottom)");
+  const surfaceOnly = mesh ? !(mesh.meta.baseMm > 0) : !!opts.surfaceOnly;
+  if (!surfaceOnly && scan.nzNeg < 1) errors.push("no downward faces (bottom)");
   if (scan.nzPos < 1) errors.push("no upward faces (relief)");
   if (scan.size[2]! < 0.05) errors.push("no Z thickness");
   const large = !mesh || mesh.meta.triangleCount > FULL_TOPOLOGY_TRIS;

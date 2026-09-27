@@ -198,3 +198,28 @@ ok(Math.abs(shallow.meta.zMax - deep.meta.zMax) < 0.05 && Math.abs(shallow.meta.
 console.log(
   `carve mesh.check OK (${n} assertions) · 160² ${perfMesh.meta.triangleCount} tris · ${(perfBuf.byteLength / 1e6).toFixed(2)} MB · ${perfMs} ms · 1024² ${hi.meta.triangleCount} tris · ${((84 + hi.meta.triangleCount * 50) / 1e6).toFixed(1)} MB stl`,
 );
+
+// Base 0 = surface-only export (what ArtCAM imports as a relief): top grid only, Z 0..depth, valid.
+{
+  const { buildRelief: br, restampRelief: rs, triangleEstimate: te } = await import("./mesh.ts");
+  const { validateMesh: vm, validateStl: vs } = await import("./validate.ts");
+  const { writeStl: ws } = await import("./stl.ts");
+  const g = 24;
+  const f = new Float32Array(g * g);
+  for (let i = 0; i < f.length; i++) f[i] = (Math.sin(i * 0.37) + 1) / 2;
+  let lo = Infinity, hi = -Infinity;
+  for (const v of f) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  for (let i = 0; i < f.length; i++) f[i] = (f[i]! - lo) / (hi - lo);
+  const surf = br(f, g, g, { widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
+  if (surf.meta.triangleCount !== (g - 1) * (g - 1) * 2) throw new Error("FAIL: surface-only has walls/bottom");
+  if (te(g, g, true) !== surf.meta.triangleCount) throw new Error("FAIL: surface estimate");
+  const r = vm(surf);
+  if (!r.ok) throw new Error("FAIL: surface-only mesh invalid: " + r.errors.join("; "));
+  if (Math.abs(r.zMax - 3) > 1e-4) throw new Error("FAIL: surface-only top should be depth (" + r.zMax + ")");
+  const sr = vs(ws(surf), surf);
+  if (!sr.ok) throw new Error("FAIL: surface-only STL invalid: " + sr.errors.join("; "));
+  let threw = false;
+  try { rs(surf, f, { widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 }); } catch { threw = true; }
+  if (!threw) throw new Error("FAIL: restamp must refuse base on/off switch");
+  console.log(`carve mesh.check surface-only OK · ${surf.meta.triangleCount} tris · Z 0..${r.zMax.toFixed(2)} mm`);
+}

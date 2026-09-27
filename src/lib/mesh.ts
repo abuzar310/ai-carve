@@ -3,7 +3,8 @@
  *                                    ├→ Preview (same typed arrays)
  *                                    └→ writeStl → parseStl → validateStl
  *
- * One height-field solid: relief top + base + walls + bottom.
+ * baseMm > 0: one closed solid (relief top + base + walls + bottom).
+ * baseMm = 0: relief surface only, Z 0..depth — what ArtCAM / Aspire import as a relief.
  * Preview and STL both come from ReliefMesh. Quality only changes sample density.
  */
 
@@ -85,10 +86,16 @@ function boundaryRing(gx: number, gy: number): Array<[number, number]> {
   return ring;
 }
 
-export function triangleEstimate(cols: number, rows: number): number {
+/** Base 0 means surface-only export (no walls, no bottom). */
+export function isSurfaceOnly(baseMm: number): boolean {
+  return !(baseMm > 0);
+}
+
+export function triangleEstimate(cols: number, rows: number, surfaceOnly = false): number {
   const gx = Math.max(2, cols | 0);
   const gy = Math.max(2, rows | 0);
   const top = (gx - 1) * (gy - 1) * 2;
+  if (surfaceOnly) return top;
   const walls = 4 * (gx + gy - 2);
   const bottom = 2 * (gx + gy - 2);
   return top + walls + bottom;
@@ -108,15 +115,16 @@ export function buildRelief(h: Float32Array, cols: number, rows: number, opts: R
   const widthMm = opts.widthMm;
   const heightMm = opts.heightMm;
   const depthMm = Math.max(0, opts.depthMm);
-  const baseMm = Math.max(0.01, opts.baseMm);
+  const surface = isSurfaceOnly(opts.baseMm);
+  const baseMm = surface ? 0 : Math.max(0.01, opts.baseMm);
   if (!(widthMm > 0) || !(heightMm > 0)) throw new Error("board size must be > 0");
 
   const layer = gx * gy;
   const ring = boundaryRing(gx, gy);
   const vertexCount = layer + ring.length + 1;
   const topTris = (gx - 1) * (gy - 1) * 2;
-  const wallCount = 4 * (gx + gy - 2);
-  const bottomTris = ring.length;
+  const wallCount = surface ? 0 : 4 * (gx + gy - 2);
+  const bottomTris = surface ? 0 : ring.length;
   const triangleCount = topTris + wallCount + bottomTris;
   const positions = new Float32Array(vertexCount * 3);
   const indices = new Uint32Array(triangleCount * 3);
@@ -178,13 +186,13 @@ export function buildRelief(h: Float32Array, cols: number, rows: number, opts: R
   }
   const topIdx = n.i;
 
-  for (let x = 0; x < gx - 1; x++) {
+  for (let x = 0; x < gx - 1 && !surface; x++) {
     addTri(indices, n, bot(x, 0), top(x, 0), top(x + 1, 0));
     addTri(indices, n, bot(x, 0), top(x + 1, 0), bot(x + 1, 0));
     addTri(indices, n, bot(x, gy - 1), bot(x + 1, gy - 1), top(x + 1, gy - 1));
     addTri(indices, n, bot(x, gy - 1), top(x + 1, gy - 1), top(x, gy - 1));
   }
-  for (let y = 0; y < gy - 1; y++) {
+  for (let y = 0; y < gy - 1 && !surface; y++) {
     addTri(indices, n, bot(0, y), top(0, y + 1), top(0, y));
     addTri(indices, n, bot(0, y), bot(0, y + 1), top(0, y + 1));
     addTri(indices, n, bot(gx - 1, y), top(gx - 1, y), top(gx - 1, y + 1));
@@ -192,7 +200,7 @@ export function buildRelief(h: Float32Array, cols: number, rows: number, opts: R
   }
   const wallIdx = n.i;
 
-  for (let i = 0; i < ring.length; i++) addTri(indices, n, center, layer + i, layer + ((i + 1) % ring.length));
+  if (!surface) for (let i = 0; i < ring.length; i++) addTri(indices, n, center, layer + i, layer + ((i + 1) % ring.length));
   if (n.i !== indices.length) throw new Error("index fill mismatch");
 
   const normals = new Float32Array(positions.length);
@@ -246,7 +254,9 @@ export function restampRelief(mesh: ReliefMesh, h: Float32Array, opts: ReliefOpt
   const widthMm = opts.widthMm;
   const heightMm = opts.heightMm;
   const depthMm = Math.max(0, opts.depthMm);
-  const baseMm = Math.max(0.01, opts.baseMm);
+  const surface = isSurfaceOnly(opts.baseMm);
+  if (surface !== isSurfaceOnly(mesh.meta.baseMm)) throw new Error("base on/off changes topology: rebuild");
+  const baseMm = surface ? 0 : Math.max(0.01, opts.baseMm);
   if (!(widthMm > 0) || !(heightMm > 0)) throw new Error("board size must be > 0");
   const layer = gx * gy;
   const dx = widthMm / (gx - 1);
