@@ -8,9 +8,9 @@
  */
 
 export const QUALITY = {
-  standard: { label: "Standard", field: 220, preview: 220, previewMobile: 160 },
-  high: { label: "High", field: 512, preview: 440, previewMobile: 280 },
-  ultra: { label: "Ultra", field: 720, preview: 600, previewMobile: 320 },
+  standard: { label: "Standard", field: 512 },
+  high: { label: "High", field: 1024 },
+  ultra: { label: "Ultra", field: 1280 },
 } as const;
 
 export type Quality = keyof typeof QUALITY;
@@ -43,7 +43,7 @@ export type ReliefMesh = {
   };
 };
 
-/** Cap to the source picture so Ultra cannot invent pixels. */
+/** Cap to the source picture so a preset cannot invent pixels. High is 1024 on a large square. */
 export function fieldCols(q: Quality, srcMax: number): number {
   const want = QUALITY[q].field;
   if (!(srcMax > 0)) return want;
@@ -58,9 +58,9 @@ export function constrainedPreview(): boolean {
   return typeof window !== "undefined" && window.innerWidth < 760;
 }
 
-export function previewCols(q: Quality, mobile = false, field = Infinity): number {
-  const cap = mobile ? QUALITY[q].previewMobile : QUALITY[q].preview;
-  return Math.max(8, Math.min(cap, field, QUALITY[q].field));
+/** Preview uses the export field. A second, coarser grid was hiding the relief the STL actually contains. */
+export function previewCols(q: Quality, _mobile = false, field = Infinity): number {
+  return Math.max(8, Math.min(QUALITY[q].field, field));
 }
 
 export function exportCols(q: Quality, srcMax = Infinity): number {

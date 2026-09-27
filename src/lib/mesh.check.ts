@@ -1,6 +1,6 @@
 import { pixelsToHeight, normalizeHeight } from "./height.ts";
 import { refineHeight } from "./refine.ts";
-import { buildRelief, fieldCols, triangleEstimate } from "./mesh.ts";
+import { buildRelief, fieldCols, previewCols, triangleEstimate } from "./mesh.ts";
 import { analyzeStl, parseStl, writeStl, writeStlAsync } from "./stl.ts";
 import { validateMesh, validateMeshQuick, validateStl } from "./validate.ts";
 
@@ -95,7 +95,10 @@ ok(perfR.ok, `perf stl ${perfR.errors.join("; ")}`);
 ok(perfMesh.meta.triangleCount > 50_000, "preview-scale density");
 ok(perfBuf.byteLength === 84 + perfMesh.meta.triangleCount * 50, "binary size");
 ok(fieldCols("ultra", 256) === 256, "ultra does not invent pixels");
-ok(fieldCols("ultra", 2000) === 720 && fieldCols("high", 2000) === 512, "quality caps");
+ok(fieldCols("high", 2000) === 1024 && fieldCols("standard", 2000) === 512 && fieldCols("ultra", 2000) === 1280, "quality caps");
+ok(fieldCols("high", 768) === 768, "high keeps a smaller source");
+ok(previewCols("high", true, 1024) === 1024, "preview grid matches the export field");
+ok(previewCols("standard", true, 4000) === 512, "preview does not drop to a phone thumbnail");
 ok(triangleEstimate(220, 220) === 193596, "standard triangle estimate");
 ok(validateMesh(buildRelief(grid("flat", 16, 16), 16, 16, board)).mode === "full", "small mesh full topology");
 ok(validateMesh(perfMesh).mode === "full", "160² still full");
@@ -121,6 +124,53 @@ for (const n of [512, 720] as const) {
   ok(Math.abs(r.size[0] - 100) < 0.05 && Math.abs(r.size[2] - 5) < 0.05, `${n} bbox`);
 }
 
+function picture(kind: "groove" | "portrait" | "steps", cols: number): Float32Array {
+  const h = new Float32Array(cols * cols);
+  const cx = (cols - 1) / 2;
+  const cy = (cols - 1) / 2;
+  for (let y = 0; y < cols; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      if (kind === "groove") {
+        h[i] = x === Math.round(cols * 0.5) ? 0.05 : 0.85;
+      } else if (kind === "portrait") {
+        const d = Math.hypot((x - cx) / cols, (y - cy) / cols);
+        h[i] = d < 0.18 ? 0.95 : d < 0.32 ? 0.45 : 0.15;
+      } else {
+        h[i] = x < cols * 0.33 ? 0.2 : x < cols * 0.66 ? 0.55 : 0.9;
+      }
+    }
+  }
+  return h;
+}
+
+const boards = { widthMm: 120, heightMm: 80, depthMm: 4, baseMm: 2.5 };
+for (const kind of ["groove", "portrait", "steps"] as const) {
+  const cols = kind === "groove" ? 64 : kind === "portrait" ? 48 : 40;
+  const h = picture(kind, cols);
+  const m = buildRelief(h, cols, cols, boards);
+  const buf = writeStl(m);
+  const r = validateStl(buf, m);
+  ok(r.ok, `${kind} stl ${r.errors.join("; ")}`);
+  ok(Math.abs(r.size[0] - 120) < 0.05 && Math.abs(r.size[1] - 80) < 0.05, `${kind} XY ${r.size}`);
+  ok(r.zMin <= 0.05 && r.zMax >= boards.baseMm + 0.5, `${kind} Z ${r.zMin}..${r.zMax}`);
+  ok(r.triangles === m.meta.triangleCount && buf.byteLength === 84 + r.triangles * 50, `${kind} binary size`);
+  ok(!r.ok || r.degenerate === 0, `${kind} degenerate`);
+}
+const groove = buildRelief(picture("groove", 64), 64, 64, boards);
+ok(groove.meta.topZMax - groove.meta.topZMin > 2, `groove survives ${groove.meta.topZMax - groove.meta.topZMin}`);
+
+const hiH = normalizeHeight(grid("carving", 1024, 1024));
+const hi = buildRelief(hiH, 1024, 1024, board);
+ok(hi.meta.cols === 1024 && hi.meta.rows === 1024, "1024 field is the mesh grid");
+ok(hi.meta.triangleCount === triangleEstimate(1024, 1024), `1024 triangles ${hi.meta.triangleCount}`);
+ok(hi.meta.topZMax - hi.meta.topZMin > 1.5, "1024 relief is not flat");
+let finite = true;
+for (let i = 0; i < hi.positions.length; i += 997) {
+  if (!Number.isFinite(hi.positions[i]!)) finite = false;
+}
+ok(finite, "1024 positions finite");
+
 console.log(
-  `carve mesh.check OK (${n} assertions) · 160² ${perfMesh.meta.triangleCount} tris · ${(perfBuf.byteLength / 1e6).toFixed(2)} MB · ${perfMs} ms`,
+  `carve mesh.check OK (${n} assertions) · 160² ${perfMesh.meta.triangleCount} tris · ${(perfBuf.byteLength / 1e6).toFixed(2)} MB · ${perfMs} ms · 1024² ${hi.meta.triangleCount} tris · ${((84 + hi.meta.triangleCount * 50) / 1e6).toFixed(1)} MB stl`,
 );

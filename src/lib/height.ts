@@ -34,7 +34,31 @@ export function sampleHeight(h: Float32Array, cols: number, rows: number, x: num
   return h[r * cols + c] ?? 0;
 }
 
-/** Bilinear resample of the same height field. Preview uses this — it does not rebuild depth. */
+/** Restore edges lost when a large picture is sampled down to the depth field. */
+export function sharpenHeight(h: Float32Array, cols: number, rows: number, amount = 0.45): Float32Array {
+  if (!(amount > 0) || cols < 3 || rows < 3) return h;
+  const blur = new Float32Array(h.length);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      let s = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = Math.min(rows - 1, Math.max(0, y + dy));
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = Math.min(cols - 1, Math.max(0, x + dx));
+          s += h[yy * cols + xx] ?? 0;
+        }
+      }
+      blur[y * cols + x] = s / 9;
+    }
+  }
+  const out = new Float32Array(h.length);
+  for (let i = 0; i < h.length; i++) {
+    out[i] = Math.min(1, Math.max(0, (h[i] ?? 0) + amount * ((h[i] ?? 0) - (blur[i] ?? 0))));
+  }
+  return out;
+}
+
+/** Bilinear resample of the same height field. */
 export function resampleHeight(h: Float32Array, cols: number, rows: number, outCols: number, outRows: number): Float32Array {
   if (outCols === cols && outRows === rows) return h;
   if (outCols < 2 || outRows < 2) throw new Error("resample too small");
@@ -73,6 +97,41 @@ export function heightToImageData(h: Float32Array, cols: number, rows: number): 
   return img;
 }
 
+function drawSampled(
+  ctx: CanvasRenderingContext2D,
+  src: CanvasImageSource,
+  sw: number,
+  sh: number,
+  cols: number,
+  rows: number,
+) {
+  if (!(sw > cols * 2) || !(sh > rows * 2)) {
+    ctx.drawImage(src, 0, 0, cols, rows);
+    return;
+  }
+  let cur: CanvasImageSource = src;
+  let w = sw;
+  let h = sh;
+  let scratch: HTMLCanvasElement | null = null;
+  while (w > cols * 2 && h > rows * 2) {
+    const nw = Math.max(cols, Math.round(w / 2));
+    const nh = Math.max(rows, Math.round(h / 2));
+    const next = document.createElement("canvas");
+    next.width = nw;
+    next.height = nh;
+    const nctx = next.getContext("2d");
+    if (!nctx) break;
+    nctx.imageSmoothingEnabled = true;
+    nctx.imageSmoothingQuality = "high";
+    nctx.drawImage(cur, 0, 0, nw, nh);
+    scratch = next;
+    cur = next;
+    w = nw;
+    h = nh;
+  }
+  ctx.drawImage(scratch ?? cur, 0, 0, cols, rows);
+}
+
 export async function rasterFromImage(
   src: CanvasImageSource,
   cols: number,
@@ -89,9 +148,11 @@ export async function rasterFromImage(
   const canvas = document.createElement("canvas");
   canvas.width = cols;
   canvas.height = hh;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("No canvas");
-  ctx.drawImage(src as CanvasImageSource, 0, 0, cols, hh);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  drawSampled(ctx, src, w, h0, cols, hh);
   const { data } = ctx.getImageData(0, 0, cols, hh);
   return { height: pixelsToHeight(data, invert), cols, rows: hh };
 }

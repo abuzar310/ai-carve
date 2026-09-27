@@ -42,6 +42,8 @@ export function ReliefPreview({
     mat: THREE.MeshStandardMaterial;
     camera: THREE.PerspectiveCamera;
     controls: OrbitControls;
+    renderer: THREE.WebGLRenderer;
+    host: HTMLDivElement;
     applyView: (v: View) => void;
     setRange: (show: boolean, top?: number, walls?: number) => void;
   } | null>(null);
@@ -51,7 +53,7 @@ export function ReliefPreview({
     if (!el) return;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x14110e);
-    scene.fog = new THREE.Fog(0x14110e, 90, 420);
+    scene.fog = new THREE.Fog(0x14110e, 420, 1400);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 4000);
     camera.up.set(0, 0, 1);
     let renderer: THREE.WebGLRenderer;
@@ -64,6 +66,11 @@ export function ReliefPreview({
     }
     renderer.setPixelRatio(/iP(hone|ad|od)/.test(navigator.userAgent) ? 1 : Math.min(2, window.devicePixelRatio || 1));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.domElement.addEventListener("webglcontextlost", (ev) => {
+      ev.preventDefault();
+      el.classList.add("ph");
+      el.textContent = "3D preview unavailable. This browser stopped WebGL on this model. You can still download the STL.";
+    });
     el.appendChild(renderer.domElement);
 
     scene.add(new THREE.AmbientLight(0x4a453c, 0.08));
@@ -80,8 +87,8 @@ export function ReliefPreview({
     const rim = new THREE.DirectionalLight(0xffdca0, 0.55);
     rim.position.set(-6, 64, 14);
     scene.add(rim);
-    const rake = new THREE.DirectionalLight(0xfff1c8, 1.6);
-    rake.position.set(-8, -28, 2);
+    const rake = new THREE.DirectionalLight(0xfff1c8, 2.1);
+    rake.position.set(-18, -48, 6);
     scene.add(rake);
     const floor = new THREE.Mesh(
       new THREE.CircleGeometry(240, 64),
@@ -93,7 +100,7 @@ export function ReliefPreview({
     const geo = new THREE.BufferGeometry();
     const mat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.32,
+      roughness: 0.38,
       metalness: 0.03,
       vertexColors: true,
       side: THREE.FrontSide,
@@ -144,7 +151,7 @@ export function ReliefPreview({
       geo.setDrawRange(0, show ? n : Math.max(0, top + walls));
     };
 
-    api.current = { geo, mat, camera, controls, applyView, setRange };
+    api.current = { geo, mat, camera, controls, renderer, host: el, applyView, setRange };
 
     let raf = 0;
     const tick = () => {
@@ -179,6 +186,11 @@ export function ReliefPreview({
     a.geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     a.geo.computeBoundingBox();
     a.geo.computeBoundingSphere();
+    const ratio = mesh.meta.triangleCount > 1_500_000 ? 1 : Math.min(1.5, window.devicePixelRatio || 1);
+    a.renderer.setPixelRatio(ratio);
+    const w = a.host.clientWidth;
+    const h = a.host.clientHeight;
+    if (w > 8 && h > 8) a.renderer.setSize(w, h, false);
   }, [mesh]);
 
   useEffect(() => {

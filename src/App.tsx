@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { heightToImageData, normalizeHeight, rasterFromImage, resampleHeight } from "./lib/height";
+import { heightToImageData, normalizeHeight, rasterFromImage, sharpenHeight } from "./lib/height";
 import { refineHeight } from "./lib/refine";
-import { QUALITY, buildRelief, constrainedPreview, fieldCols, previewCols, triangleEstimate, type Quality } from "./lib/mesh";
+import { QUALITY, buildRelief, constrainedPreview, fieldCols, triangleEstimate, type Quality } from "./lib/mesh";
 import { writeStlAsync } from "./lib/stl";
 import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl } from "./lib/validate";
 import { reliefBmp } from "./lib/bmp";
@@ -20,7 +20,7 @@ const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 type FileMeta = { name: string; size: number; w: number; h: number };
 
 const QUALITY_HINT: Record<Quality, string> = {
-  standard: "Draft",
+  standard: "Smaller file",
   high: "Shop work",
   ultra: "Finest field",
 };
@@ -50,7 +50,7 @@ function tick(): Promise<void> {
 
 function sayErr(e: unknown): string {
   const m = e instanceof Error ? e.message : "";
-  if (/Could not read|not a picture/i.test(m)) return "That file could not be opened as an image. Use JPG, PNG, or WebP.";
+  if (/Could not read|not a picture/i.test(m)) return "Unable to process this image. Try JPG, PNG, WebP, or BMP.";
   if (/Image host|Generate failed/i.test(m)) return "The picture could not be generated. Check your connection, or upload a photo instead.";
   if (/WebGL/i.test(m)) return "3D preview unavailable. This browser is not providing WebGL. You can still download the STL.";
   if (/Mesh invalid|STL invalid|STL count/i.test(m)) return "The 3D file could not be written. Try High quality, or a smaller picture.";
@@ -126,9 +126,9 @@ export default function App() {
     const srcMax = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
     const cols = fieldCols(quality, srcMax);
     const next = await rasterFromImage(img, cols, invert);
-    const height = normalize ? normalizeHeight(next.height) : next.height;
+    let height = normalize ? normalizeHeight(next.height) : next.height;
+    if (srcMax > cols + 1) height = sharpenHeight(height, next.cols, next.rows, 0.45);
     setBusy("Building 3D relief");
-    await tick();
     setRaw({ height, cols: next.cols, rows: next.rows });
     setCutPass((n) => n + 1);
     setView((v) => ({ kind: "persp", n: v.n + 1 }));
@@ -142,21 +142,9 @@ export default function App() {
     [raw, contrast, smooth],
   );
 
-  const previewGrid = useMemo(() => {
-    if (!raw || !refined) return null;
-    const cols = previewCols(quality, mobile, raw.cols);
-    const rows = Math.max(2, Math.round((raw.rows * cols) / raw.cols));
-    return { height: resampleHeight(refined, raw.cols, raw.rows, cols, rows), cols, rows };
-  }, [raw, refined, quality, mobile]);
-
   const mesh = useMemo(
-    () => (previewGrid ? buildRelief(previewGrid.height, previewGrid.cols, previewGrid.rows, board) : null),
-    [previewGrid, board],
-  );
-
-  const report = useMemo(
-    () => (mesh ? (mesh.meta.triangleCount > FULL_TOPOLOGY_TRIS ? validateMeshQuick(mesh) : validateMesh(mesh)) : null),
-    [mesh],
+    () => (raw && refined ? buildRelief(refined, raw.cols, raw.rows, board) : null),
+    [raw, refined, board],
   );
 
   async function generate() {
@@ -191,6 +179,7 @@ export default function App() {
       setFileMeta({ name: "Generated image", size: blob.size, w: 0, h: 0 });
       await fromImage(url);
     } catch (e) {
+      setRaw(null);
       setErr(sayErr(e));
       setBusy("");
     }
@@ -206,6 +195,7 @@ export default function App() {
     try {
       await fromImage(url);
     } catch (e) {
+      setRaw(null);
       setErr(sayErr(e));
       setBusy("");
     }
@@ -225,6 +215,7 @@ export default function App() {
   useEffect(() => {
     if (!pic) return;
     fromImage(pic).catch((e) => {
+      setRaw(null);
       setErr(sayErr(e));
       setBusy("");
     });
@@ -246,7 +237,7 @@ export default function App() {
   const thickMm = board.depthMm + board.baseMm;
 
   async function saveStl() {
-    if (!refined || !raw) return;
+    if (!mesh || !refined || !raw) return;
     setErr("");
     setNote("");
     setWarn(null);
@@ -256,7 +247,7 @@ export default function App() {
       await tick();
       setBusy("Building export mesh");
       await tick();
-      out = buildRelief(refined, raw.cols, raw.rows, board);
+      out = mesh;
       setBusy("Validating");
       await tick();
       const meshR = out.meta.triangleCount > FULL_TOPOLOGY_TRIS ? validateMeshQuick(out) : validateMesh(out);
@@ -297,7 +288,7 @@ export default function App() {
     if (!raw) return;
     const tris = triangleEstimate(raw.cols, raw.rows);
     const mb = stlBytesEstimate(tris) / 1e6;
-    if (quality === "ultra" && raw.cols >= 600) {
+    if (mb >= 80) {
       setWarn({ mb, tris });
       return;
     }
@@ -514,7 +505,7 @@ export default function App() {
                 <h2>{err ? "Unable to process this image" : "Ready to generate your relief"}</h2>
                 <p>
                   {err
-                    ? "Try JPG, PNG, or WebP. You can replace the source image and try again."
+                    ? "Try JPG, PNG, WebP, or BMP. You can replace the source image and try again."
                     : "Carve will build a 3D relief from the source image."}
                 </p>
                 <button type="button" className="btn pri" onClick={() => void regenerate()} disabled={!!busy}>
@@ -537,15 +528,15 @@ export default function App() {
 
           {mesh ? <p className="well-hint">Drag to turn · pinch to zoom</p> : null}
 
-          {mesh && report ? (
+          {mesh ? (
             <div className="info nums">
               <b>
                 {QUALITY[quality].label} · {board.widthMm} × {board.heightMm}&nbsp;mm
               </b>
               <br />
-              Relief {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm
+              Relief {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm · Overall {thickMm}&nbsp;mm
               <br />
-              {trisLabel(exportTris)} triangles · ~
+              {nf.format(mesh.meta.triangleCount)} triangles · {raw?.cols} × {raw?.rows} samples · ~
               {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}
             </div>
           ) : null}
@@ -620,11 +611,14 @@ export default function App() {
             </div>
             <p className="meta" style={{ marginTop: 10 }}>
               {quality === "ultra"
-                ? "Finest sampling from your picture. Large STL on a sharp photo."
+                ? "Up to 1280 samples across the picture. Large STL."
                 : quality === "high"
-                  ? "Use this for ArtCAM Import 3D Model."
-                  : "Fewer triangles. Check size and depth first."}
+                  ? "Up to 1024 samples. Preview and STL are the same relief."
+                  : "Up to 512 samples. Smaller file, same solid."}
             </p>
+            {mobile && raw && raw.cols >= 700 ? (
+              <p className="meta">This preview is the full relief. Saving the STL is easier on a computer.</p>
+            ) : null}
           </div>
 
           <div className="card">
@@ -687,7 +681,31 @@ export default function App() {
               </label>
               <label className="field">
                 <span>
-                  Contrast <em>{contrast}</em>
+                  Overall height <em className="nums">{thickMm}&nbsp;mm</em>
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0.2}
+                  step={0.1}
+                  value={thickMm}
+                  onChange={(e) => {
+                    const z = Number(e.target.value);
+                    if (!Number.isFinite(z) || z <= board.baseMm) return;
+                    setBoard((b) => ({ ...b, depthMm: Math.round((z - b.baseMm) * 100) / 100 }));
+                  }}
+                />
+                <small>Base plus relief. This is the block height in the STL.</small>
+              </label>
+              {raw ? (
+                <p className="meta nums">
+                  Depth field {raw.cols} × {raw.rows}
+                  {mesh ? ` · ${nf.format(mesh.meta.triangleCount)} triangles` : ""}
+                </p>
+              ) : null}
+              <label className="field">
+                <span>
+                  Depth strength <em>{contrast}</em>
                 </span>
                 <div className="slide">
                   <input
@@ -902,13 +920,13 @@ export default function App() {
       {warn ? (
         <div className="modal" role="dialog" aria-modal="true" aria-labelledby="warn-title">
           <div className="card">
-            <h2 id="warn-title">Large Ultra export</h2>
+            <h2 id="warn-title">Large STL</h2>
             <p>
-              This file is about {nf1.format(warn.mb)}&nbsp;MB ({nf.format(warn.tris)} triangles). Phones can struggle. Save Ultra on a computer.
+              This file is about {nf1.format(warn.mb)}&nbsp;MB ({nf.format(warn.tris)} triangles). The preview is this same relief. Phones can struggle to save it.
             </p>
             <div className="actions" style={{ marginTop: 12 }}>
               <button type="button" className="btn pri full" onClick={() => void saveStl()}>
-                Download Ultra
+                Download anyway
               </button>
               <button
                 type="button"

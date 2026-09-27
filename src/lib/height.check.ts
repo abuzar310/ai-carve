@@ -1,4 +1,4 @@
-import { luma, normalizeHeight, pixelsToHeight, resampleHeight } from "./height.ts";
+import { luma, normalizeHeight, pixelsToHeight, resampleHeight, sharpenHeight } from "./height.ts";
 
 let n = 0;
 const ok = (cond: boolean, msg: string) => {
@@ -20,5 +20,9 @@ const ramp = new Float32Array([0, 1, 0, 1]);
 const rs = resampleHeight(ramp, 2, 2, 3, 3);
 ok(Math.abs((rs[4] ?? 0) - 0.5) < 1e-6, "bilinear centre");
 ok(resampleHeight(ramp, 2, 2, 2, 2) === ramp, "same size is identity");
+const soft = new Float32Array(9);
+soft[4] = 1;
+const sharp = sharpenHeight(soft, 3, 3, 0.5);
+ok((sharp[4] ?? 0) > 1 - 1e-6 && (sharp[0] ?? 1) < 0.1, "sharpen lifts a peak without lifting the corner");
 
 console.log(`carve height.check OK (${n} assertions)`);
