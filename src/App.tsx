@@ -293,6 +293,9 @@ export default function App() {
       setBusy("Building export mesh");
       await tick();
       out = mesh;
+      if (out.meta.cols !== raw.cols || out.meta.rows !== raw.rows) {
+        throw new Error("Export mesh does not match the preview");
+      }
       setBusy("Validating");
       await tick();
       const meshR = out.meta.triangleCount > FULL_TOPOLOGY_TRIS ? validateMeshQuick(out) : validateMesh(out);

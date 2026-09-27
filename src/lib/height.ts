@@ -132,6 +132,15 @@ function drawSampled(
   ctx.drawImage(scratch ?? cur, 0, 0, cols, rows);
 }
 
+/** Fit a picture inside a long-side budget. Neither edge grows past that budget. */
+export function fitField(srcW: number, srcH: number, longSide: number): { cols: number; rows: number } {
+  const w = Math.max(1, srcW);
+  const h = Math.max(1, srcH);
+  const long = Math.max(8, longSide | 0);
+  if (w >= h) return { cols: long, rows: Math.max(8, Math.round((long * h) / w)) };
+  return { cols: Math.max(8, Math.round((long * w) / h)), rows: long };
+}
+
 export async function rasterFromImage(
   src: CanvasImageSource,
   cols: number,
@@ -144,15 +153,15 @@ export async function rasterFromImage(
 }> {
   const w = "width" in src ? Number(src.width) : cols;
   const h0 = "height" in src ? Number(src.height) : cols;
-  const hh = Math.max(8, rows ?? Math.round((cols * h0) / Math.max(w, 1)));
+  const fit = rows ? { cols, rows: Math.max(8, rows) } : fitField(w, h0, cols);
   const canvas = document.createElement("canvas");
-  canvas.width = cols;
-  canvas.height = hh;
+  canvas.width = fit.cols;
+  canvas.height = fit.rows;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("No canvas");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  drawSampled(ctx, src, w, h0, cols, hh);
-  const { data } = ctx.getImageData(0, 0, cols, hh);
-  return { height: pixelsToHeight(data, invert), cols, rows: hh };
+  drawSampled(ctx, src, w, h0, fit.cols, fit.rows);
+  const { data } = ctx.getImageData(0, 0, fit.cols, fit.rows);
+  return { height: pixelsToHeight(data, invert), cols: fit.cols, rows: fit.rows };
 }
