@@ -349,6 +349,20 @@ export default function App() {
     setQuality("high");
   }
 
+  async function regenerate() {
+    if (!pic) return;
+    setErr("");
+    setNote("");
+    try {
+      await fromImage(pic);
+    } catch (e) {
+      setErr(sayErr(e));
+      setBusy("");
+    }
+  }
+
+  const step = !pic ? "source" : busy && !ready ? "generate" : /STL|shared|downloaded/i.test(note) ? "export" : ready ? "relief" : "generate";
+
   async function toggleFull() {
     const el = wellRef.current;
     if (!el) return;
@@ -385,13 +399,21 @@ export default function App() {
       <header className="bar">
         <a className="brand" href="#workspace" translate="no">
           <span className="kicker">AI Carve</span>
-          <span className="word">Carve</span>
+          <h1 className="word">Carve</h1>
         </a>
         <nav className="nav" aria-label="Product">
-          <a href="#workspace">Create</a>
+          <a href="#workspace" aria-current={!pic || step !== "export" ? "page" : undefined}>Create</a>
           <a href="#how">How it works</a>
-          <a href="#help">Help</a>
+          <a href="#help-copy">Help</a>
         </nav>
+        <details className="menu">
+          <summary>Menu</summary>
+          <nav aria-label="Product menu" onClick={(e) => (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open")}>
+            <a href="#workspace">Create</a>
+            <a href="#how">How it works</a>
+            <a href="#help-copy">Help</a>
+          </nav>
+        </details>
         <div className="top-actions">
           <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
             <i />
@@ -405,30 +427,64 @@ export default function App() {
         </div>
       </header>
 
+      <nav className="path" aria-label="Workflow">
+        <b className={step === "source" ? "now" : pic ? "did" : ""}>Source</b>
+        <span aria-hidden="true">→</span>
+        <b className={step === "generate" ? "now" : ready ? "did" : ""}>Generate</b>
+        <span aria-hidden="true">→</span>
+        <b className={step === "relief" ? "now" : step === "export" ? "did" : ""}>3D relief</b>
+        <span aria-hidden="true">→</span>
+        <b className={step === "export" ? "now" : ""}>Export</b>
+      </nav>
+
       <main id="workspace" className={"work" + (pic ? " has-source" : "")}>
         {pic ? (
           <aside className="source card" aria-label="Source image">
-            <h2>Source</h2>
-            <img src={pic} alt={fileMeta?.name || "Design to carve"} width={fileMeta?.w || 512} height={fileMeta?.h || 512} />
-            <p>{fileMeta?.name || "Picture"}</p>
-            <p className="meta nums">
-              {fileMeta ? bytes(fileMeta.size) : ""}
-              {fileMeta?.w ? ` · ${fileMeta.w} × ${fileMeta.h} px` : ""}
-            </p>
+            <h2>Source image</h2>
+            <figure>
+              <img src={pic} alt={fileMeta?.name || "Design to carve"} width={fileMeta?.w || 512} height={fileMeta?.h || 512} />
+              <figcaption>
+                <p className="source-name">{fileMeta?.name || "Picture"}</p>
+                <p className="meta nums">
+                  {fileMeta?.size ? bytes(fileMeta.size) : ""}
+                  {fileMeta?.w ? `${fileMeta.size ? " · " : ""}${fileMeta.w} × ${fileMeta.h} px` : ""}
+                </p>
+              </figcaption>
+            </figure>
             <div className="actions two">
               <button type="button" className="btn ghost" onClick={pickFile} disabled={!!busy}>
                 Replace
               </button>
-                <button type="button" className="btn ghost" onClick={newProject} disabled={!!busy}>
-                  New
-                </button>
+              <button type="button" className="btn ghost" onClick={clearPic} disabled={!!busy}>
+                Remove
+              </button>
             </div>
             <canvas ref={depth} hidden />
           </aside>
         ) : null}
 
         <div className="stage">
-        {ready && !busy ? <p className="result">Your 3D relief is ready</p> : null}
+        {ready && !busy ? (
+          <div className="result-bar">
+            <div>
+              <h2 className="result">Your 3D relief is ready</h2>
+              <p className="meta nums">
+                {QUALITY[quality].label} · {board.widthMm} × {board.heightMm} mm · {board.depthMm} mm relief
+                {exportMb ? ` · ~${exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}` : ""}
+              </p>
+            </div>
+            <div className="result-acts">
+              <button type="button" className="btn ghost" disabled={!!busy} onClick={() => void regenerate()}>
+                Regenerate
+              </button>
+              <button type="button" className="btn ghost" disabled={!!busy} onClick={newProject}>
+                New project
+              </button>
+            </div>
+          </div>
+        ) : pic && !ready && !busy ? (
+          <p className="result">Ready to generate your relief.</p>
+        ) : null}
         <section
           ref={wellRef}
           className="well"
@@ -449,15 +505,29 @@ export default function App() {
             <Suspense fallback={<div className="gl ph">Loading 3D preview…</div>}>
               <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
             </Suspense>
+          ) : pic ? (
+            <div className="drop">
+              <div>
+                <h2>{err ? "Unable to process this image" : "Ready to generate your relief"}</h2>
+                <p>
+                  {err
+                    ? "Try JPG, PNG, or WebP. You can replace the source image and try again."
+                    : "Carve will build a 3D relief from the source image."}
+                </p>
+                <button type="button" className="btn pri" onClick={() => void regenerate()} disabled={!!busy}>
+                  Generate 3D model
+                </button>
+              </div>
+            </div>
           ) : (
             <div className={"drop" + (over ? " on" : "")}>
               <div>
                 <h2>Create your 3D relief</h2>
                 <p>Upload an image to begin. Light areas become the raised carving.</p>
                 <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
-                  Choose a picture
+                  Upload image
                 </button>
-                <p className="hint">JPG, PNG, or WebP. Drag and drop works too.</p>
+                <p className="hint">JPG, PNG, WebP, or BMP. Drag and drop works too.</p>
               </div>
             </div>
           )}
@@ -465,12 +535,13 @@ export default function App() {
           {mesh && report ? (
             <div className="info nums">
               <b>
-                {board.widthMm} × {board.heightMm}&nbsp;mm
+                {QUALITY[quality].label} · {board.widthMm} × {board.heightMm}&nbsp;mm
               </b>
               <br />
-              Depth {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm
+              Relief {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm
               <br />
-              {QUALITY[quality].label} · {trisLabel(exportTris)} triangles
+              {trisLabel(exportTris)} triangles · ~
+              {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}
             </div>
           ) : null}
 
@@ -496,9 +567,9 @@ export default function App() {
 
         {mesh ? (
           <div className="hud" role="toolbar" aria-label="3D views">
-            <p className="hint-turn">Drag to turn · scroll or pinch to zoom</p>
+            <p className="hint-turn">Drag to orbit · pinch or scroll to zoom</p>
             <button type="button" className="chip" aria-pressed={view.kind === "persp"} onClick={() => goView("persp")}>
-              3/4
+              Perspective
             </button>
             <button type="button" className="chip" aria-pressed={view.kind === "top"} onClick={() => goView("top")}>
               Top
@@ -516,7 +587,7 @@ export default function App() {
               Reset
             </button>
             <button type="button" className="chip" aria-pressed={wireframe} onClick={() => setWireframe((v) => !v)}>
-              Wire
+              Wireframe
             </button>
             <button type="button" className="chip" aria-pressed={showBase} onClick={() => setShowBase((v) => !v)}>
               Base
@@ -525,7 +596,7 @@ export default function App() {
               Tint
             </button>
             <button type="button" className="chip" onClick={() => void toggleFull()}>
-              Full
+              Fullscreen
             </button>
           </div>
         ) : null}
@@ -566,9 +637,17 @@ export default function App() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="card">
+            <h3>Image</h3>
             <label className="toggle">
               <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
               Invert light and dark
+            </label>
+            <label className="toggle">
+              <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />
+              Stretch to full depth
             </label>
           </div>
 
@@ -663,10 +742,6 @@ export default function App() {
                 </div>
                 <small>0 keeps sharp edges. Higher values soften the relief.</small>
               </label>
-              <label className="toggle">
-                <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />
-                Stretch to full depth
-              </label>
               <button
                 type="button"
                 className="btn ghost full"
@@ -729,14 +804,14 @@ export default function App() {
                     {exportLabel}
                   </button>
                   <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveArtcam()}>
-                    Download height BMP
+                    Height map for ArtCAM
                   </button>
                 </div>
               </>
             ) : (
               <>
                 <h3>Export</h3>
-                <p className="meta">{pic ? "The relief is building. Download appears here when it is ready." : "Add a picture first."}</p>
+                <p className="meta">{pic ? "The relief is building. Download appears here when it is ready." : "Upload an image first. The STL download will appear here."}</p>
               </>
             )}
           </div>
@@ -758,24 +833,47 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <div>
-          <h2 id="how">How it works</h2>
-          <p>Add a picture. Light areas rise, dark areas cut. Pick detail and relief, then download an STL for ArtCAM Import 3D Model.</p>
+        <div className="foot-brand">
+          <p className="kicker">AI Carve</p>
+          <p className="foot-line">Image → 3D relief → STL</p>
+          <p>Turn a picture into a solid carving file for ArtCAM.</p>
         </div>
         <div>
-          <h2 id="help">Help</h2>
-          <p>Use JPG, PNG, or WebP. If the subject looks sunk, invert light and dark. Ultra makes a large file on a sharp photo.</p>
+          <h2>Product</h2>
+          <nav aria-label="Product">
+            <a href="#workspace">Create</a>
+            <a href="#how">How it works</a>
+          </nav>
         </div>
         <div>
-          <h2 id="privacy">Privacy</h2>
+          <h2>Resources</h2>
+          <nav aria-label="Resources">
+            <a href="#help-copy">Help</a>
+            <a href="#formats">Supported formats</a>
+          </nav>
+        </div>
+        <div>
+          <h2>Legal</h2>
+          <nav aria-label="Legal">
+            <a href="#privacy">Privacy</a>
+          </nav>
+        </div>
+        <div className="foot-copy" id="how">
+          <h2>How it works</h2>
+          <p>Upload an image. Light areas rise, dark areas sink. Choose detail and relief, then download an STL for ArtCAM Import 3D Model.</p>
+        </div>
+        <div className="foot-copy" id="help-copy">
+          <h2>Help</h2>
+          <p>If the subject looks sunk, invert light and dark. Ultra makes a large file on a sharp photo. Height BMP is only needed if ArtCAM asks to open an image.</p>
+        </div>
+        <div className="foot-copy" id="formats">
+          <h2>Supported formats</h2>
+          <p>Upload JPG, PNG, WebP, or BMP. Export binary STL for Import 3D Model, plus an optional 8-bit height BMP.</p>
+        </div>
+        <div className="foot-copy" id="privacy">
+          <h2>Privacy</h2>
           <p>Pictures stay in this browser. Carve does not write them to a shop database.</p>
         </div>
-        <nav className="foot-nav" aria-label="Footer">
-          <a href="#workspace">Create</a>
-          <a href="#how">How it works</a>
-          <a href="#help">Help</a>
-          <a href="#privacy">Privacy</a>
-        </nav>
       </footer>
 
       {ready ? (
