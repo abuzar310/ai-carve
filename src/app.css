@@ -286,7 +286,7 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
   .lede { font-size: 15px }
   .app { padding: 14px 14px 120px }
   .top { align-items: flex-start; flex-direction: column; gap: 8px; margin-bottom: 10px }
-  .path { margin-bottom: 10px }
+  .trust { display: none }
   .pair { grid-template-columns: 1fr }
   .seg button { min-height: 48px }
   .hide-phone { display: none }

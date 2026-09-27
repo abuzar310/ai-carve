@@ -359,7 +359,7 @@ export default function App() {
         </div>
       </header>
 
-      <p className="job">{job}</p>
+      {pic ? <p className="job">{job}</p> : null}
 
       <main id="workspace" className="work">
         <div className="stage">
