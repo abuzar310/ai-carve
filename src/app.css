@@ -392,6 +392,7 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
 @media (max-width: 900px) {
   .foot { grid-template-columns: 1fr 1fr }
   .foot-brand, .foot-copy { grid-column: 1 / -1 }
+  .foot > div:not(.foot-brand):not(.foot-copy) { display: none }
 }
 
 @keyframes pulse { 50% { opacity: .4 } }
