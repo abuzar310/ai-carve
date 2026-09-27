@@ -147,6 +147,14 @@ h1 {
   color: var(--ok);
 }
 .stats.bad { color: var(--err) }
+.export-est {
+  margin: 0 2px;
+  font-family: var(--mono); font-size: 12px; color: var(--mute);
+}
+.warn {
+  padding: 12px; background: var(--panel); border: 1px solid #2a2d27;
+}
+.warn p { margin: 0 0 10px; color: var(--ink) }
 
 .bench { margin-top: 16px; display: grid; gap: 12px }
 .ask { display: grid; grid-template-columns: 1fr auto auto; gap: 8px }

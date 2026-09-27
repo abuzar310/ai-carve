@@ -1,8 +1,8 @@
 import { pixelsToHeight, normalizeHeight } from "./height.ts";
 import { refineHeight } from "./refine.ts";
 import { buildRelief, fieldCols, triangleEstimate } from "./mesh.ts";
-import { analyzeStl, parseStl, writeStl } from "./stl.ts";
-import { validateMesh, validateStl } from "./validate.ts";
+import { analyzeStl, parseStl, writeStl, writeStlAsync } from "./stl.ts";
+import { validateMesh, validateMeshQuick, validateStl } from "./validate.ts";
 
 let n = 0;
 const ok = (cond: boolean, msg: string) => {
@@ -97,6 +97,29 @@ ok(perfBuf.byteLength === 84 + perfMesh.meta.triangleCount * 50, "binary size");
 ok(fieldCols("ultra", 256) === 256, "ultra does not invent pixels");
 ok(fieldCols("ultra", 2000) === 720 && fieldCols("high", 2000) === 512, "quality caps");
 ok(triangleEstimate(220, 220) === 193596, "standard triangle estimate");
+ok(validateMesh(buildRelief(grid("flat", 16, 16), 16, 16, board)).mode === "full", "small mesh full topology");
+ok(validateMesh(perfMesh).mode === "full", "160² still full");
+const stdH = normalizeHeight(grid("carving", 220, 220));
+const stdMesh = buildRelief(stdH, 220, 220, board);
+ok(validateMesh(stdMesh).mode === "export", "220² export path skips topology maps");
+ok(validateMeshQuick(stdMesh).ok, "220 quick ok");
+const stdBuf = writeStl(stdMesh);
+const stdR = validateStl(stdBuf);
+ok(stdR.ok && stdR.mode === "export" && stdBuf.byteLength === 84 + 193596 * 50, "standard export scan");
+const asyncBuf = await writeStlAsync(stdMesh, 10_000, async () => {});
+ok(asyncBuf.byteLength === stdBuf.byteLength, "async writer size");
+
+for (const n of [512, 720] as const) {
+  const h = normalizeHeight(grid("carving", n, n));
+  const m = buildRelief(h, n, n, board);
+  ok(validateMesh(m).mode === "export", `${n} skips topology maps`);
+  const q = validateMeshQuick(m);
+  ok(q.ok && q.degenerate === 0, `${n} quick mesh`);
+  const b = writeStl(m);
+  const r = validateStl(b);
+  ok(r.ok && r.triangles === m.meta.triangleCount && b.byteLength === 84 + r.triangles * 50, `${n} stl scan`);
+  ok(Math.abs(r.size[0] - 100) < 0.05 && Math.abs(r.size[2] - 5) < 0.05, `${n} bbox`);
+}
 
 console.log(
   `carve mesh.check OK (${n} assertions) · 160² ${perfMesh.meta.triangleCount} tris · ${(perfBuf.byteLength / 1e6).toFixed(2)} MB · ${perfMs} ms`,

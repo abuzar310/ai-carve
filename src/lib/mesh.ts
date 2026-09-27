@@ -8,9 +8,9 @@
  */
 
 export const QUALITY = {
-  standard: { label: "Standard", field: 220, preview: 160, previewMobile: 128 },
-  high: { label: "High", field: 512, preview: 280, previewMobile: 200 },
-  ultra: { label: "Ultra", field: 720, preview: 320, previewMobile: 220 },
+  standard: { label: "Standard", field: 220, preview: 220, previewMobile: 160 },
+  high: { label: "High", field: 512, preview: 440, previewMobile: 280 },
+  ultra: { label: "Ultra", field: 720, preview: 600, previewMobile: 320 },
 } as const;
 
 export type Quality = keyof typeof QUALITY;
@@ -48,6 +48,14 @@ export function fieldCols(q: Quality, srcMax: number): number {
   const want = QUALITY[q].field;
   if (!(srcMax > 0)) return want;
   return Math.max(8, Math.min(want, Math.round(srcMax)));
+}
+
+export function constrainedPreview(): boolean {
+  if (typeof navigator === "undefined") return false;
+  if (/iP(hone|ad|od)/.test(navigator.userAgent)) return true;
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  if (typeof mem === "number" && mem <= 4) return true;
+  return typeof window !== "undefined" && window.innerWidth < 760;
 }
 
 export function previewCols(q: Quality, mobile = false, field = Infinity): number {

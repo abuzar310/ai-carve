@@ -2,6 +2,30 @@ import { faceNormal, type ReliefMesh } from "./mesh.ts";
 
 const HEADER = "carve relief";
 
+function writeTri(
+  view: DataView,
+  o: number,
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  cx: number, cy: number, cz: number,
+): number {
+  const [nx, ny, nz] = faceNormal(ax, ay, az, bx, by, bz, cx, cy, cz);
+  view.setFloat32(o, nx, true); o += 4;
+  view.setFloat32(o, ny, true); o += 4;
+  view.setFloat32(o, nz, true); o += 4;
+  view.setFloat32(o, ax, true); o += 4;
+  view.setFloat32(o, ay, true); o += 4;
+  view.setFloat32(o, az, true); o += 4;
+  view.setFloat32(o, bx, true); o += 4;
+  view.setFloat32(o, by, true); o += 4;
+  view.setFloat32(o, bz, true); o += 4;
+  view.setFloat32(o, cx, true); o += 4;
+  view.setFloat32(o, cy, true); o += 4;
+  view.setFloat32(o, cz, true); o += 4;
+  view.setUint16(o, 0, true);
+  return o + 2;
+}
+
 export function writeStl(mesh: ReliefMesh): ArrayBuffer {
   const count = mesh.meta.triangleCount;
   const buf = new ArrayBuffer(84 + count * 50);
@@ -11,19 +35,37 @@ export function writeStl(mesh: ReliefMesh): ArrayBuffer {
   const { positions, indices } = mesh;
   let o = 84;
   for (let i = 0; i < indices.length; i += 3) {
-    const ia = indices[i]! * 3;
-    const ib = indices[i + 1]! * 3;
-    const ic = indices[i + 2]! * 3;
-    const ax = positions[ia]!, ay = positions[ia + 1]!, az = positions[ia + 2]!;
-    const bx = positions[ib]!, by = positions[ib + 1]!, bz = positions[ib + 2]!;
-    const cx = positions[ic]!, cy = positions[ic + 1]!, cz = positions[ic + 2]!;
-    const [nx, ny, nz] = faceNormal(ax, ay, az, bx, by, bz, cx, cy, cz);
-    for (const v of [nx, ny, nz, ax, ay, az, bx, by, bz, cx, cy, cz]) {
-      view.setFloat32(o, v, true);
-      o += 4;
-    }
-    view.setUint16(o, 0, true);
-    o += 2;
+    const ia = indices[i]! * 3, ib = indices[i + 1]! * 3, ic = indices[i + 2]! * 3;
+    o = writeTri(
+      view, o,
+      positions[ia]!, positions[ia + 1]!, positions[ia + 2]!,
+      positions[ib]!, positions[ib + 1]!, positions[ib + 2]!,
+      positions[ic]!, positions[ic + 1]!, positions[ic + 2]!,
+    );
+  }
+  return buf;
+}
+
+/** Same writer, yields so Safari can paint progress on large Ultra files. */
+export async function writeStlAsync(mesh: ReliefMesh, yieldEvery = 48_000, pause?: () => Promise<void>): Promise<ArrayBuffer> {
+  const count = mesh.meta.triangleCount;
+  const buf = new ArrayBuffer(84 + count * 50);
+  const view = new DataView(buf);
+  for (let i = 0; i < 80; i++) view.setUint8(i, HEADER.charCodeAt(i) || 0);
+  view.setUint32(80, count, true);
+  const { positions, indices } = mesh;
+  let o = 84;
+  let n = 0;
+  for (let i = 0; i < indices.length; i += 3) {
+    const ia = indices[i]! * 3, ib = indices[i + 1]! * 3, ic = indices[i + 2]! * 3;
+    o = writeTri(
+      view, o,
+      positions[ia]!, positions[ia + 1]!, positions[ia + 2]!,
+      positions[ib]!, positions[ib + 1]!, positions[ib + 2]!,
+      positions[ic]!, positions[ic + 1]!, positions[ic + 2]!,
+    );
+    n++;
+    if (pause && n % yieldEvery === 0) await pause();
   }
   return buf;
 }
@@ -66,6 +108,61 @@ export type StlStats = {
   nzPos: number;
   nzNeg: number;
 };
+
+export type StlScan = {
+  triangles: number;
+  bytes: number;
+  size: [number, number, number];
+  zMin: number;
+  zMax: number;
+  degenerate: number;
+  nan: number;
+  inf: number;
+  nzPos: number;
+  nzNeg: number;
+};
+
+/** Walk every triangle. No Maps, no per-vertex string keys. */
+export function scanStl(buf: ArrayBuffer | Uint8Array): StlScan {
+  const raw = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const info = parseStl(raw);
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  let degenerate = 0, nan = 0, inf = 0, nzPos = 0, nzNeg = 0;
+  for (let t = 0; t < info.count; t++) {
+    const o = 84 + t * 50;
+    const nz = view.getFloat32(o + 8, true);
+    if (nz > 0.2) nzPos++;
+    if (nz < -0.2) nzNeg++;
+    const ax = view.getFloat32(o + 12, true), ay = view.getFloat32(o + 16, true), az = view.getFloat32(o + 20, true);
+    const bx = view.getFloat32(o + 24, true), by = view.getFloat32(o + 28, true), bz = view.getFloat32(o + 32, true);
+    const cx = view.getFloat32(o + 36, true), cy = view.getFloat32(o + 40, true), cz = view.getFloat32(o + 44, true);
+    if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(az) || !Number.isFinite(bx) || !Number.isFinite(by) || !Number.isFinite(bz) || !Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(cz)) {
+      if (Number.isNaN(ax) || Number.isNaN(ay) || Number.isNaN(az) || Number.isNaN(bx) || Number.isNaN(by) || Number.isNaN(bz) || Number.isNaN(cx) || Number.isNaN(cy) || Number.isNaN(cz)) nan++;
+      else inf++;
+    }
+    if (ax < minX) minX = ax; if (bx < minX) minX = bx; if (cx < minX) minX = cx;
+    if (ay < minY) minY = ay; if (by < minY) minY = by; if (cy < minY) minY = cy;
+    if (az < minZ) minZ = az; if (bz < minZ) minZ = bz; if (cz < minZ) minZ = cz;
+    if (ax > maxX) maxX = ax; if (bx > maxX) maxX = bx; if (cx > maxX) maxX = cx;
+    if (ay > maxY) maxY = ay; if (by > maxY) maxY = by; if (cy > maxY) maxY = cy;
+    if (az > maxZ) maxZ = az; if (bz > maxZ) maxZ = bz; if (cz > maxZ) maxZ = cz;
+    if (faceNormal(ax, ay, az, bx, by, bz, cx, cy, cz)[3] < 1e-12) degenerate++;
+  }
+  return {
+    triangles: info.count,
+    bytes: info.bytes,
+    size: [maxX - minX, maxY - minY, maxZ - minZ],
+    zMin: minZ,
+    zMax: maxZ,
+    degenerate,
+    nan,
+    inf,
+    nzPos,
+    nzNeg,
+  };
+}
 
 export function analyzeStl(buf: ArrayBuffer | Uint8Array): StlStats {
   const raw = buf instanceof Uint8Array ? buf : new Uint8Array(buf);

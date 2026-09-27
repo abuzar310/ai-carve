@@ -61,26 +61,29 @@ export function ReliefPreview({
       el.textContent = "3D preview needs WebGL. STL export still works.";
       return;
     }
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(/iP(hone|ad|od)/.test(navigator.userAgent) ? 1 : Math.min(2, window.devicePixelRatio || 1));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     el.appendChild(renderer.domElement);
 
-    scene.add(new THREE.AmbientLight(0x6b6254, 0.16));
-    scene.add(new THREE.HemisphereLight(0xf3ead8, 0x1a1610, 0.28));
-    const key = new THREE.DirectionalLight(0xfff1d6, 2.15);
-    key.position.set(12, -48, 7);
+    scene.add(new THREE.AmbientLight(0x4a453c, 0.08));
+    scene.add(new THREE.HemisphereLight(0xf6edd8, 0x14110c, 0.18));
+    const key = new THREE.DirectionalLight(0xfff3d4, 2.8);
+    key.position.set(6, -36, 4);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0x9eb4cc, 0.28);
-    fill.position.set(-50, 20, 30);
+    const skim = new THREE.DirectionalLight(0xffe8b8, 1.15);
+    skim.position.set(40, -8, 3);
+    scene.add(skim);
+    const fill = new THREE.DirectionalLight(0x8aa0b8, 0.18);
+    fill.position.set(-40, 16, 22);
     scene.add(fill);
-    const rim = new THREE.DirectionalLight(0xffe2b0, 0.55);
-    rim.position.set(-8, 70, 18);
+    const rim = new THREE.DirectionalLight(0xffdca0, 0.4);
+    rim.position.set(-6, 64, 14);
     scene.add(rim);
 
     const geo = new THREE.BufferGeometry();
     const mat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.4,
+      roughness: 0.32,
       metalness: 0.03,
       vertexColors: true,
       side: THREE.FrontSide,
@@ -117,7 +120,7 @@ export function ReliefPreview({
       else if (v === "front") camera.position.set(center.x, center.y - dist, center.z + maxDim * 0.15);
       else if (v === "side") camera.position.set(center.x + dist, center.y, center.z + maxDim * 0.15);
       else {
-        camera.position.set(center.x + dist * 0.95, center.y - dist * 1.22, center.z + Math.max(size.z * 2.4, dist * 0.16));
+        camera.position.set(center.x + dist * 1.02, center.y - dist * 1.28, center.z + Math.max(size.z * 2.8, dist * 0.12));
       }
       camera.near = Math.max(0.05, dist / 200);
       camera.far = dist * 20;

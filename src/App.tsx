@@ -1,23 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { heightToImageData, normalizeHeight, rasterFromImage, resampleHeight } from "./lib/height";
 import { refineHeight } from "./lib/refine";
-import { QUALITY, buildRelief, fieldCols, previewCols, triangleEstimate, type Quality } from "./lib/mesh";
-import { writeStl } from "./lib/stl";
-import { formatReport, validateMesh, validateStl } from "./lib/validate";
+import { QUALITY, buildRelief, constrainedPreview, fieldCols, previewCols, triangleEstimate, type Quality } from "./lib/mesh";
+import { writeStlAsync } from "./lib/stl";
+import { FULL_TOPOLOGY_TRIS, formatReport, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl } from "./lib/validate";
 import { reliefBmp } from "./lib/bmp";
 import { artcamNames } from "./lib/names";
+import { canShareFile, saveFile } from "./lib/download";
 import { ReliefPreview } from "./preview";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
-
-function download(name: string, data: string | ArrayBuffer | Uint8Array | Blob, type: string) {
-  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data as BlobPart], { type }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -51,10 +43,12 @@ export default function App() {
   const [wireframe, setWireframe] = useState(false);
   const [showBase, setShowBase] = useState(true);
   const [view, setView] = useState<{ kind: "fit" | "front" | "top" | "side" | "persp"; n: number }>({ kind: "persp", n: 0 });
+  const [warn, setWarn] = useState<{ mb: number; tris: number } | null>(null);
   const goView = (kind: "fit" | "front" | "top" | "side" | "persp") => setView((v) => ({ kind, n: v.n + 1 }));
   const depth = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const mobile = typeof window !== "undefined" && window.innerWidth < 760;
+  const mobile = constrainedPreview();
+  const shareOk = useMemo(() => canShareFile(), []);
 
   useEffect(() => {
     if (!err && !note) return;
@@ -97,7 +91,10 @@ export default function App() {
     [previewGrid, board],
   );
 
-  const report = useMemo(() => (mesh ? validateMesh(mesh) : null), [mesh]);
+  const report = useMemo(
+    () => (mesh ? (mesh.meta.triangleCount > FULL_TOPOLOGY_TRIS ? validateMeshQuick(mesh) : validateMesh(mesh)) : null),
+    [mesh],
+  );
 
   async function generate() {
     setErr("");
@@ -171,38 +168,69 @@ export default function App() {
   async function saveStl() {
     if (!refined || !raw) return;
     setErr("");
+    setNote("");
+    setWarn(null);
+    let out: ReturnType<typeof buildRelief> | null = null;
     try {
-      setBusy("Generating mesh");
+      setBusy("Preparing height field");
       await tick();
-      const out = buildRelief(refined, raw.cols, raw.rows, board);
-      setBusy("Validating mesh");
+      setBusy("Building export mesh");
       await tick();
-      const meshR = validateMesh(out);
+      out = buildRelief(refined, raw.cols, raw.rows, board);
+      setBusy("Validating");
+      await tick();
+      const meshR = out.meta.triangleCount > FULL_TOPOLOGY_TRIS ? validateMeshQuick(out) : validateMesh(out);
       if (!meshR.ok) throw new Error(meshR.errors[0] || "Mesh invalid");
-      setBusy("Preparing STL");
+      setBusy("Writing STL");
       await tick();
-      const buf = writeStl(out);
-      const stlR = validateStl(buf, out);
+      const buf = await writeStlAsync(out, 48_000, async () => {
+        setBusy("Writing STL");
+        await tick();
+      });
+      setBusy("Validating");
+      await tick();
+      const expected = out.meta.triangleCount;
+      const stlR = expected > FULL_TOPOLOGY_TRIS ? validateStl(buf) : validateStl(buf, out);
+      if (stlR.triangles !== expected) throw new Error("STL count != mesh");
       if (!stlR.ok) throw new Error(stlR.errors[0] || "STL invalid");
+      out = null;
+      setBusy("Preparing download");
+      await tick();
       const { stl } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
-      download(stl, buf, "model/stl");
+      const blob = new Blob([buf], { type: "model/stl" });
+      setBusy("Download ready");
+      await saveFile(stl, blob, "model/stl");
       setNote(formatReport(stlR));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "STL failed");
     } finally {
+      out = null;
       setBusy("");
     }
   }
 
+  function requestStl() {
+    if (!raw) return;
+    const tris = triangleEstimate(raw.cols, raw.rows);
+    const mb = stlBytesEstimate(tris) / 1e6;
+    if (quality === "ultra" && raw.cols >= 600) {
+      setWarn({ mb, tris });
+      return;
+    }
+    void saveStl();
+  }
+
   async function saveArtcam() {
     if (!raw) return;
+    setErr("");
+    setNote("");
     setBusy("Relief");
     try {
       const h = refined ?? raw.height;
       const c = raw.cols;
       const r = raw.rows;
       const { bmp } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
-      download(bmp, reliefBmp(h, c, r, board.widthMm, board.heightMm), "image/bmp");
+      await saveFile(bmp, new Blob([reliefBmp(h, c, r, board.widthMm, board.heightMm) as BlobPart], { type: "image/bmp" }), "image/bmp");
       setNote(bmp);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Relief failed");
@@ -381,13 +409,44 @@ export default function App() {
         </div>
 
         <div className="out">
-          <button className="pri" disabled={!ready || !!busy} onClick={() => void saveStl()}>
-            Download STL
+          <button className="pri" disabled={!ready || !!busy} onClick={() => requestStl()}>
+            {shareOk ? "Share / Save STL" : "Download STL"}
           </button>
           <button className="sec" disabled={!ready || !!busy} onClick={() => void saveArtcam()}>
             Download BMP
           </button>
         </div>
+        {raw && (
+          <p className="export-est">
+            {QUALITY[quality].label} · {triangleEstimate(raw.cols, raw.rows).toLocaleString()} triangles · ~
+            {(stlBytesEstimate(triangleEstimate(raw.cols, raw.rows)) / 1e6).toFixed(1)} MB STL
+          </p>
+        )}
+        {warn && (
+          <div className="warn" role="dialog" aria-label="Large export">
+            <p>
+              Ultra export is approximately {warn.mb.toFixed(0)} MB and may be slow on mobile devices.
+            </p>
+            <div className="out">
+              <button className="pri" type="button" onClick={() => void saveStl()}>
+                Download Ultra
+              </button>
+              <button
+                className="sec"
+                type="button"
+                onClick={() => {
+                  setWarn(null);
+                  setQuality("high");
+                }}
+              >
+                Use High instead
+              </button>
+              <button className="sec" type="button" onClick={() => setWarn(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         <ol className="steps">
           <li>Upload or generate a picture</li>
           <li>Check the 3D relief — rotate so the depth is obvious</li>
