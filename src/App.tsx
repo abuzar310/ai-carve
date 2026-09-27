@@ -3,13 +3,23 @@ import { heightToImageData, normalizeHeight, rasterFromImage, resampleHeight } f
 import { refineHeight } from "./lib/refine";
 import { QUALITY, buildRelief, constrainedPreview, fieldCols, previewCols, triangleEstimate, type Quality } from "./lib/mesh";
 import { writeStlAsync } from "./lib/stl";
-import { FULL_TOPOLOGY_TRIS, formatReport, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl } from "./lib/validate";
+import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl } from "./lib/validate";
 import { reliefBmp } from "./lib/bmp";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
 import { ReliefPreview } from "./preview";
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
+
+const QUALITY_HINT: Record<Quality, string> = {
+  standard: "Fast test",
+  high: "CNC ready",
+  ultra: "Maximum detail",
+};
+
+const BUILD_STAGES = ["Preparing image", "Generating depth", "Building 3D relief", "Preparing preview"] as const;
+const DRAW_STAGES = ["Generating image", ...BUILD_STAGES] as const;
+const EXPORT_STAGES = ["Preparing height field", "Building export mesh", "Writing STL", "Validating", "Preparing download"] as const;
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -24,9 +34,33 @@ function tick(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0));
 }
 
+function sayErr(e: unknown): string {
+  const m = e instanceof Error ? e.message : "";
+  if (/Could not read|not a picture/i.test(m)) return "That file could not be opened as an image. Use JPG, PNG, or WebP.";
+  if (/Image host|Generate failed/i.test(m)) return "The picture could not be generated. Check your connection, or upload a photo instead.";
+  if (/WebGL/i.test(m)) return "3D preview unavailable. This browser is not providing WebGL. You can still download the STL.";
+  if (/Mesh invalid|STL invalid|STL count/i.test(m)) return "The 3D file could not be written. Try High quality, or a smaller picture.";
+  if (/Read failed/i.test(m)) return "The picture could not be processed. Try another image.";
+  return m || "Something went wrong. Try again, or upload a different picture.";
+}
+
+function bytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1e6) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1e6).toFixed(1)} MB`;
+}
+
+function stagesFor(busy: string): readonly string[] {
+  if (!busy) return [];
+  if (busy === "Generating image" || busy === "Drawing") return DRAW_STAGES;
+  if (/STL|export|Validat|Download|height field|Relief/i.test(busy)) return EXPORT_STAGES;
+  return BUILD_STAGES;
+}
+
 export default function App() {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
   const [pic, setPic] = useState("");
+  const [fileMeta, setFileMeta] = useState<{ name: string; size: number } | null>(null);
   const [invert, setInvert] = useState(false);
   const [normalize, setNormalize] = useState(true);
   const [contrast, setContrast] = useState(1.15);
@@ -51,13 +85,10 @@ export default function App() {
   const shareOk = useMemo(() => canShareFile(), []);
 
   useEffect(() => {
-    if (!err && !note) return;
-    const t = window.setTimeout(() => {
-      setErr("");
-      setNote("");
-    }, 6000);
+    if (!note) return;
+    const t = window.setTimeout(() => setNote(""), 6000);
     return () => window.clearTimeout(t);
-  }, [err, note]);
+  }, [note]);
 
   async function fromImage(src: string) {
     setBusy("Preparing image");
@@ -68,9 +99,13 @@ export default function App() {
     const cols = fieldCols(quality, srcMax);
     const next = await rasterFromImage(img, cols, invert);
     const height = normalize ? normalizeHeight(next.height) : next.height;
+    setBusy("Building 3D relief");
+    await tick();
     setRaw({ height, cols: next.cols, rows: next.rows });
     setCutPass((n) => n + 1);
     setView((v) => ({ kind: "persp", n: v.n + 1 }));
+    setBusy("Preparing preview");
+    await tick();
     setBusy("");
   }
 
@@ -99,7 +134,7 @@ export default function App() {
   async function generate() {
     setErr("");
     setNote("");
-    setBusy("Drawing");
+    setBusy("Generating image");
     try {
       const text = prompt.trim() + BIAS;
       const seed = Date.now() % 99999;
@@ -125,30 +160,44 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
       setPic(url);
+      setFileMeta({ name: "Generated image", size: blob.size });
       await fromImage(url);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Generate failed");
+      setErr(sayErr(e));
       setBusy("");
     }
   }
 
   async function onFile(file: File) {
     setErr("");
+    setNote("");
     const url = URL.createObjectURL(file);
     if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
     setPic(url);
+    setFileMeta({ name: file.name, size: file.size });
     try {
       await fromImage(url);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Read failed");
+      setErr(sayErr(e));
       setBusy("");
     }
+  }
+
+  function clearPic() {
+    if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
+    setPic("");
+    setRaw(null);
+    setFileMeta(null);
+    setWarn(null);
+    setErr("");
+    setNote("");
+    setBusy("");
   }
 
   useEffect(() => {
     if (!pic) return;
     fromImage(pic).catch((e) => {
-      setErr(e instanceof Error ? e.message : "Read failed");
+      setErr(sayErr(e));
       setBusy("");
     });
     // invert / normalize / quality rebuilds depth from the same picture
@@ -164,6 +213,10 @@ export default function App() {
   }, [refined, raw]);
 
   const ready = !!mesh;
+  const exportTris = raw ? triangleEstimate(raw.cols, raw.rows) : 0;
+  const exportMb = raw ? stlBytesEstimate(exportTris) / 1e6 : 0;
+  const thickMm = board.depthMm + board.baseMm;
+  const step = !pic ? "upload" : !ready ? "generate" : "export";
 
   async function saveStl() {
     if (!refined || !raw) return;
@@ -199,10 +252,14 @@ export default function App() {
       const { stl } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
       const blob = new Blob([buf], { type: "model/stl" });
       setBusy("Download ready");
-      await saveFile(stl, blob, "model/stl");
-      setNote(formatReport(stlR));
+      const how = await saveFile(stl, blob, "model/stl");
+      setNote(
+        how === "shared"
+          ? `STL shared · ${board.widthMm} × ${board.heightMm} × ${thickMm} mm`
+          : `STL downloaded · ${board.widthMm} × ${board.heightMm} × ${thickMm} mm`,
+      );
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "STL failed");
+      setErr(sayErr(e));
     } finally {
       out = null;
       setBusy("");
@@ -231,209 +288,444 @@ export default function App() {
       const r = raw.rows;
       const { bmp } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
       await saveFile(bmp, new Blob([reliefBmp(h, c, r, board.widthMm, board.heightMm) as BlobPart], { type: "image/bmp" }), "image/bmp");
-      setNote(bmp);
+      setNote("Height map downloaded. Use this if ArtCAM asks to open an image.");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Relief failed");
+      setErr(sayErr(e));
     } finally {
       setBusy("");
     }
   }
 
-  function setNum(key: keyof typeof board, raw: string) {
-    const n = Number(raw);
+  function setNum(key: keyof typeof board, rawVal: string) {
+    const n = Number(rawVal);
     if (!Number.isFinite(n) || n <= 0) return;
     setBoard((b) => ({ ...b, [key]: n }));
   }
 
+  function pickFile() {
+    fileRef.current?.click();
+  }
+
+  const stageList = stagesFor(busy);
+  const exportLabel = shareOk ? "Share / Save STL" : "Download STL";
+
   return (
-    <div className="shell">
-      <header className="rail">
-        <div>
-          <div className="mark">Picture → 3D relief → STL</div>
-          <h1>Carve</h1>
-          <p className="lede">Upload or generate a picture, see the solid relief, then download a CNC-ready STL.</p>
+    <div className="app">
+      <input
+        ref={fileRef}
+        hidden
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/*"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void onFile(f);
+          e.target.value = "";
+        }}
+      />
+
+      <header className="top">
+        <div className="brand">
+          <div className="kicker">AI Carve</div>
+          <h1 className="word">Carve</h1>
+          <p className="lede">Turn an image into a CNC-ready 3D relief.</p>
         </div>
-        <div className={"spindle" + (busy ? " run" : " idle")} aria-live="polite">
+        <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
           <i />
-          {busy || (ready ? "Ready" : "Idle")}
+          {busy || (ready ? "Ready" : "Waiting for an image")}
         </div>
       </header>
 
-      <div
-        className={"strip" + (cutPass ? " cut" : "")}
-        aria-label="Picture and depth"
-        onDragOver={(e) => {
-          e.preventDefault();
-          setOver(true);
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setOver(false);
-          const f = e.dataTransfer.files[0];
-          if (f) void onFile(f);
-        }}
-      >
-        <span key={cutPass} className="bit" aria-hidden />
-        <div className={"cell" + (pic ? " has-art" : "") + (over ? " drop" : "") + (busy && !pic ? " busy" : "")}>
-          <span className="tag">Picture</span>
-          {pic ? <img key={pic} src={pic} alt="Design to carve" /> : <div className="ph">{busy ? "Drawing…" : "Generate, drop a photo, or pick one"}</div>}
-        </div>
-        <div className={"cell" + (raw ? " has-art" : "") + (busy ? " busy" : "")}>
-          <span className="tag">Depth</span>
-          {raw ? <canvas key={"d" + cutPass} ref={depth} /> : <div className="ph">{busy ? "Generating depth…" : "White stays high. Dark is the cut."}</div>}
-        </div>
-      </div>
-      <div className={"bar" + (busy ? " on" : "")} aria-hidden>
-        <i />
+      <p className="path" aria-label="Progress">
+        <b className={step === "upload" ? "now" : pic ? "did" : undefined}>1. Upload</b>
+        <span>→</span>
+        <b className={pic && !ready ? "now" : ready ? "did" : undefined}>2. Size</b>
+        <span>→</span>
+        <b className={ready ? "did" : undefined}>3. Preview</b>
+        <span>→</span>
+        <b className={step === "export" ? "now" : undefined}>4. Download</b>
+      </p>
+
+      <div className="work">
+        <section
+          className="well"
+          aria-label={mesh ? "3D relief" : "Upload an image"}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setOver(true);
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setOver(false);
+            const f = e.dataTransfer.files[0];
+            if (f) void onFile(f);
+          }}
+        >
+          {mesh ? (
+            <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
+          ) : (
+            <div className={"drop" + (over ? " on" : "")}>
+              <div>
+                <h2>Drop a picture here</h2>
+                <p>Ornament, logo, or photo. Light areas become the raised carving.</p>
+                <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
+                  Choose a picture
+                </button>
+                <p className="hint">JPG, PNG, or WebP · drag and drop works too</p>
+              </div>
+            </div>
+          )}
+
+          {mesh && (
+            <div className="hud" role="toolbar" aria-label="3D views">
+              <button type="button" className="chip" aria-pressed={view.kind === "persp"} onClick={() => goView("persp")}>
+                Perspective
+              </button>
+              <button type="button" className="chip" onClick={() => goView("top")}>
+                Top
+              </button>
+              <button type="button" className="chip" onClick={() => goView("front")}>
+                Front
+              </button>
+              <button type="button" className="chip" onClick={() => goView("side")}>
+                Side
+              </button>
+              <button type="button" className="chip" onClick={() => goView("fit")}>
+                Fit
+              </button>
+              <button type="button" className="chip" onClick={() => goView("persp")}>
+                Reset
+              </button>
+              <button type="button" className="chip" aria-pressed={wireframe} onClick={() => setWireframe((v) => !v)}>
+                Wireframe
+              </button>
+              <button type="button" className="chip" aria-pressed={showBase} onClick={() => setShowBase((v) => !v)}>
+                Base
+              </button>
+              <button type="button" className="chip" aria-pressed={tint} onClick={() => setTint((v) => !v)}>
+                Depth tint
+              </button>
+            </div>
+          )}
+
+          {mesh && report && (
+            <div className="info">
+              <b>
+                {board.widthMm} × {board.heightMm} mm
+              </b>
+              <br />
+              Depth {board.depthMm} mm · Base {board.baseMm} mm
+              <br />
+              {QUALITY[quality].label} · {exportTris.toLocaleString()} triangles
+            </div>
+          )}
+
+          {busy && (
+            <div className="veil" role="status" aria-live="polite">
+              <div>
+                <strong>{busy}</strong>
+                <ol className="stages">
+                  {stageList.map((s) => {
+                    const i = stageList.indexOf(busy);
+                    const j = stageList.indexOf(s);
+                    const cls = s === busy || (busy === "Download ready" && s === "Preparing download") ? "on" : j >= 0 && i >= 0 && j < i ? "did" : "";
+                    return (
+                      <li key={s} className={cls}>
+                        {s}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <aside className="rail">
+          {pic && (
+            <div className="card">
+              <h3>Image</h3>
+              <div className="thumb">
+                <img src={pic} alt="Design to carve" />
+                <div>
+                  <p>{fileMeta?.name || "Picture"}</p>
+                  <small>{fileMeta ? bytes(fileMeta.size) : "Ready"}</small>
+                </div>
+                <div className="side">
+                  <button type="button" className="linkish" onClick={pickFile} disabled={!!busy}>
+                    Replace
+                  </button>
+                  <button type="button" className="linkish danger" onClick={clearPic} disabled={!!busy}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <canvas ref={depth} hidden />
+            </div>
+          )}
+
+          <div className="card">
+            <h3>Model</h3>
+            <div className="pair">
+              <label className="field">
+                <span>
+                  Width <em>{board.widthMm} mm</em>
+                </span>
+                <div className="slide">
+                  <input type="range" min={20} max={400} step={1} value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
+                  <input type="number" inputMode="decimal" min={1} value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
+                </div>
+              </label>
+              <label className="field">
+                <span>
+                  Height <em>{board.heightMm} mm</em>
+                </span>
+                <div className="slide">
+                  <input type="range" min={20} max={400} step={1} value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
+                  <input type="number" inputMode="decimal" min={1} value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>Relief</h3>
+            <div className="row">
+              <label className="field">
+                <span>
+                  <span className="lab">
+                    Relief depth
+                    <button type="button" className="tip" title="How tall the carving stands above the base. Typical CNC work is 2–6 mm." aria-label="What relief depth means">
+                      ?
+                    </button>
+                  </span>
+                  <em>{board.depthMm} mm</em>
+                </span>
+                <div className="slide">
+                  <input type="range" min={0.5} max={20} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
+                  <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
+                </div>
+                <small>Raised carving height. The 3D preview updates as you drag.</small>
+              </label>
+              <label className="field">
+                <span>
+                  <span className="lab">
+                    Base thickness
+                    <button type="button" className="tip" title="Solid slab under the carving so the part has a flat bottom for the machine." aria-label="What base thickness means">
+                      ?
+                    </button>
+                  </span>
+                  <em>{board.baseMm} mm</em>
+                </span>
+                <div className="slide">
+                  <input type="range" min={0.5} max={20} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
+                  <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
+                </div>
+              </label>
+              <label className="toggle">
+                <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
+                Invert depth
+                <button type="button" className="tip" title="Swap high and low. Use this if the subject looks sunk instead of raised." aria-label="What invert depth means">
+                  ?
+                </button>
+              </label>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>Detail quality</h3>
+            <div className="seg" role="group" aria-label="Detail quality">
+              {(Object.keys(QUALITY) as Quality[]).map((k) => (
+                <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => setQuality(k)}>
+                  <strong>{QUALITY[k].label}</strong>
+                  <span>{QUALITY_HINT[k]}</span>
+                </button>
+              ))}
+            </div>
+            <p className="meta" style={{ marginTop: 10 }}>
+              {quality === "ultra"
+                ? "Finest sampling from your picture. Large STL on a sharp photo."
+                : quality === "high"
+                  ? "Best starting point for ArtCAM Import 3D Model."
+                  : "Fewer triangles. Use this to test size and depth."}
+            </p>
+          </div>
+
+          <details className="card adv">
+            <summary>Advanced</summary>
+            <div className="row" style={{ marginTop: 12 }}>
+              <label className="field">
+                <span>
+                  Contrast <em>{contrast}</em>
+                </span>
+                <div className="slide">
+                  <input
+                    type="range"
+                    min={0.4}
+                    max={3}
+                    step={0.05}
+                    value={contrast}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n > 0) setContrast(n);
+                    }}
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.05}
+                    min={0.4}
+                    max={3}
+                    value={contrast}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n > 0) setContrast(n);
+                    }}
+                  />
+                </div>
+                <small>How strongly light and dark become height.</small>
+              </label>
+              <label className="field">
+                <span>
+                  Smoothing <em>{smooth}</em>
+                </span>
+                <div className="slide">
+                  <input
+                    type="range"
+                    min={0}
+                    max={4}
+                    step={1}
+                    value={smooth}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 0) setSmooth(Math.round(n));
+                    }}
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={1}
+                    min={0}
+                    max={4}
+                    value={smooth}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 0) setSmooth(Math.round(n));
+                    }}
+                  />
+                </div>
+                <small>0 keeps sharp edges. Higher values soften the relief.</small>
+              </label>
+              <label className="toggle">
+                <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />
+                Stretch to full depth
+              </label>
+              <button
+                type="button"
+                className="btn ghost full"
+                onClick={() => {
+                  setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
+                  setContrast(1.15);
+                  setSmooth(0);
+                  setInvert(false);
+                  setNormalize(true);
+                  setQuality("high");
+                }}
+              >
+                Reset settings
+              </button>
+            </div>
+          </details>
+
+          <details className="card gen">
+            <summary>Or describe a design</summary>
+            <div className="row" style={{ marginTop: 12 }}>
+              <label className="field">
+                <span>What to carve</span>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Peacock on a teak panel"
+                  aria-label="What to carve"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) {
+                      e.preventDefault();
+                      void generate();
+                    }
+                  }}
+                />
+              </label>
+              <button type="button" className="btn ink full" disabled={!!busy} onClick={() => void generate()}>
+                Generate image
+              </button>
+            </div>
+          </details>
+
+          <div className="card">
+            {ready ? (
+              <>
+                <p className="ready-title">Ready to export</p>
+                <p className="export-dim">
+                  STL · {board.widthMm} × {board.heightMm} × {thickMm} mm
+                </p>
+                <p className="meta">
+                  {QUALITY[quality].label} · ~{exportTris.toLocaleString()} triangles · ~{exportMb < 1 ? `${Math.round(exportMb * 1000)} KB` : `${exportMb.toFixed(1)} MB`}
+                </p>
+                <div className="actions" style={{ marginTop: 12 }}>
+                  <button type="button" className="btn pri full hide-phone" disabled={!!busy} onClick={() => requestStl()}>
+                    {exportLabel}
+                  </button>
+                  <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveArtcam()}>
+                    Download height BMP
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>Export</h3>
+                <p className="meta">Upload a picture to build the relief. The download appears here when the model is ready.</p>
+              </>
+            )}
+          </div>
+
+          {err && (
+            <div className="banner err" role="alert">
+              <p>{err}</p>
+              <button type="button" className="linkish" onClick={() => setErr("")}>
+                Dismiss
+              </button>
+            </div>
+          )}
+          {note && (
+            <div className="banner ok" role="status">
+              <p>{note}</p>
+            </div>
+          )}
+        </aside>
       </div>
 
-      <section className={"stage" + (mesh ? " has-art" : "")} aria-label="3D relief">
-        <span className="tag">3D relief</span>
-        {mesh ? (
-          <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
-        ) : (
-          <div className="ph">{busy ? busy + "…" : "The solid model appears here after a picture is loaded."}</div>
-        )}
-        {mesh && (
-          <div className="views">
-            <button type="button" onClick={() => goView("persp")}>Perspective</button>
-            <button type="button" onClick={() => goView("fit")}>Fit</button>
-            <button type="button" onClick={() => goView("front")}>Front</button>
-            <button type="button" onClick={() => goView("top")}>Top</button>
-            <button type="button" onClick={() => goView("side")}>Side</button>
-            <button type="button" onClick={() => goView("persp")}>Reset</button>
-            <button type="button" aria-pressed={wireframe} onClick={() => setWireframe((v) => !v)}>
-              Wire
-            </button>
-            <button type="button" aria-pressed={showBase} onClick={() => setShowBase((v) => !v)}>
-              Base
-            </button>
-            <button type="button" aria-pressed={tint} onClick={() => setTint((v) => !v)}>
-              Depth
-            </button>
-          </div>
-        )}
-      </section>
-      {report && (
-        <p className={"stats" + (report.ok ? "" : " bad")}>
-          {report.ok ? "MESH VALID" : "MESH INVALID"} · preview {previewGrid?.cols}×{previewGrid?.rows} · field{" "}
-          {raw?.cols}×{raw?.rows} · {report.triangles.toLocaleString()} on screen · export{" "}
-          {raw ? triangleEstimate(raw.cols, raw.rows).toLocaleString() : "—"} tris · {report.size[0].toFixed(1)} × {report.size[1].toFixed(1)} ×{" "}
-          {report.size[2].toFixed(2)} mm · Z {report.zMin.toFixed(2)}…{report.zMax.toFixed(2)} · relief {report.topSpan.toFixed(2)} mm
-        </p>
+      {ready && (
+        <div className="sticky">
+          <button type="button" className="btn pri full" disabled={!!busy} onClick={() => requestStl()}>
+            {exportLabel}
+          </button>
+        </div>
       )}
 
-      <div className="bench">
-        <div className="ask">
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What to carve"
-            aria-label="What to carve"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) {
-                e.preventDefault();
-                void generate();
-              }
-            }}
-          />
-          <button className="go" disabled={!!busy} onClick={() => void generate()}>
-            {busy || "Generate"}
-          </button>
-          <button className="ghost" type="button" onClick={() => fileRef.current?.click()}>
-            Use a photo
-          </button>
-          <input
-            ref={fileRef}
-            hidden
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onFile(f);
-              e.target.value = "";
-            }}
-          />
-        </div>
-
-        <div className="knobs">
-          <label>
-            Width mm
-            <input type="number" inputMode="decimal" value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
-          </label>
-          <label>
-            Height mm
-            <input type="number" inputMode="decimal" value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
-          </label>
-          <label>
-            Depth mm
-            <input type="number" inputMode="decimal" value={board.depthMm} step={0.1} onChange={(e) => setNum("depthMm", e.target.value)} />
-          </label>
-          <label>
-            Base mm
-            <input type="number" inputMode="decimal" value={board.baseMm} step={0.1} onChange={(e) => setNum("baseMm", e.target.value)} />
-          </label>
-          <label>
-            Contrast
-            <input type="number" inputMode="decimal" value={contrast} step={0.05} min={0.4} max={3} onChange={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isFinite(n) && n > 0) setContrast(n);
-            }} />
-          </label>
-          <label>
-            Smooth
-            <input type="number" inputMode="decimal" value={smooth} step={1} min={0} max={4} onChange={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isFinite(n) && n >= 0) setSmooth(Math.round(n));
-            }} />
-          </label>
-          <label>
-            Quality
-            <select value={quality} onChange={(e) => setQuality(e.target.value as Quality)}>
-              {(Object.keys(QUALITY) as Quality[]).map((k) => (
-                <option key={k} value={k}>
-                  {QUALITY[k].label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
-            Invert depth
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />
-            Normalize
-          </label>
-        </div>
-
-        <div className="out">
-          <button className="pri" disabled={!ready || !!busy} onClick={() => requestStl()}>
-            {shareOk ? "Share / Save STL" : "Download STL"}
-          </button>
-          <button className="sec" disabled={!ready || !!busy} onClick={() => void saveArtcam()}>
-            Download BMP
-          </button>
-        </div>
-        {raw && (
-          <p className="export-est">
-            {QUALITY[quality].label} · {triangleEstimate(raw.cols, raw.rows).toLocaleString()} triangles · ~
-            {(stlBytesEstimate(triangleEstimate(raw.cols, raw.rows)) / 1e6).toFixed(1)} MB STL
-          </p>
-        )}
-        {warn && (
-          <div className="warn" role="dialog" aria-label="Large export">
+      {warn && (
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="warn-title">
+          <div className="card">
+            <h2 id="warn-title">Large Ultra export</h2>
             <p>
-              Ultra export is approximately {warn.mb.toFixed(0)} MB and may be slow on mobile devices.
+              This file is about {warn.mb.toFixed(0)} MB ({warn.tris.toLocaleString()} triangles). Phones can struggle. A computer is the safer place to save Ultra.
             </p>
-            <div className="out">
-              <button className="pri" type="button" onClick={() => void saveStl()}>
+            <div className="actions" style={{ marginTop: 12 }}>
+              <button type="button" className="btn pri full" onClick={() => void saveStl()}>
                 Download Ultra
               </button>
               <button
-                className="sec"
                 type="button"
+                className="btn ghost full"
                 onClick={() => {
                   setWarn(null);
                   setQuality("high");
@@ -441,22 +733,13 @@ export default function App() {
               >
                 Use High instead
               </button>
-              <button className="sec" type="button" onClick={() => setWarn(null)}>
+              <button type="button" className="btn ghost full" onClick={() => setWarn(null)}>
                 Cancel
               </button>
             </div>
           </div>
-        )}
-        <ol className="steps">
-          <li>Upload or generate a picture</li>
-          <li>Check the 3D relief — rotate so the depth is obvious</li>
-          <li>Set size, depth, base, and quality (Standard = test, High = CNC, Ultra ≈ 1–2M tris when the picture is sharp enough)</li>
-          <li>Download STL for ArtCAM Import 3D Model, or BMP for Open an image</li>
-        </ol>
-        <p className={"toast" + (err ? " on err" : note ? " on ok" : "")} role="status">
-          {err || note}
-        </p>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

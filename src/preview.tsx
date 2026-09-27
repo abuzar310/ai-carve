@@ -58,7 +58,7 @@ export function ReliefPreview({
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     } catch {
       el.classList.add("ph");
-      el.textContent = "3D preview needs WebGL. STL export still works.";
+      el.textContent = "3D preview unavailable. This browser is not providing WebGL. You can still download the STL.";
       return;
     }
     renderer.setPixelRatio(/iP(hone|ad|od)/.test(navigator.userAgent) ? 1 : Math.min(2, window.devicePixelRatio || 1));
