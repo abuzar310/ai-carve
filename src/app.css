@@ -126,6 +126,7 @@ h1, h2 { text-wrap: balance }
   border-radius: var(--r-sm); background: var(--well); display: block;
 }
 .source-name { margin: 8px 0 4px; word-break: break-word }
+.source .actions.two .btn { min-height: 40px; padding: 0 10px }
 .result-bar {
   display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
   gap: 10px 16px;
@@ -205,6 +206,11 @@ h1, h2 { text-wrap: balance }
   backdrop-filter: blur(8px);
 }
 .info b { font-weight: 500 }
+.well-hint {
+  display: none;
+  position: absolute; left: 12px; top: 12px; z-index: 2;
+  margin: 0; color: #cfc6b4; font-size: 13px;
+}
 
 .rail { display: grid; gap: 12px }
 .card {
@@ -266,6 +272,8 @@ input[type="range"] { width: 100%; accent-color: var(--brass); min-height: 28px 
 .actions { display: grid; gap: 8px }
 .actions.two { grid-template-columns: 1fr 1fr }
 .hide-phone { display: block }
+.phone-only { display: none }
+.linkish.phone-only { margin-left: 8px }
 
 .thumb {
   display: grid; grid-template-columns: 72px 1fr auto; gap: 10px; align-items: center;
@@ -312,42 +320,55 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
 .modal h2 { margin: 0 0 8px; font-family: var(--display); font-size: 26px; font-weight: 520 }
 
 .sticky { display: none !important }
+.toast { display: none }
 
 @media (max-width: 1100px) {
-  .work, .work.has-source { grid-template-columns: minmax(0, 1fr) minmax(260px, 300px) }
-  .source { grid-column: 1 / -1 }
-  .source figure {
-    display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 14px; align-items: center;
-  }
+  .work { grid-template-columns: minmax(0, 1fr) minmax(240px, 280px) }
+  .work.has-source { grid-template-columns: 180px minmax(0, 1fr) minmax(240px, 280px) }
   .source img { max-height: 180px }
+  .well, .well .gl, .well .gl canvas, .drop { min-height: 480px }
 }
 @media (max-width: 900px) {
   .work, .work.has-source { grid-template-columns: 1fr }
-  .source { grid-column: auto }
   .source figure {
     display: grid; grid-template-columns: 132px 1fr; gap: 12px; align-items: center;
     margin-bottom: 10px;
   }
   .source img { width: 132px; height: 132px; max-height: 132px; object-fit: contain }
   .result { font-size: 18px }
-  .well, .well .gl, .well .gl canvas, .drop { min-height: 360px }
+  .well, .well .gl, .well .gl canvas, .drop { min-height: 400px }
   .bar { gap: 8px }
   .nav { display: none }
   .menu { display: block }
   .top-actions { margin-left: 0 }
-  .app { padding: 12px 14px 120px }
+  .app { padding: 12px 14px 28px }
   .pair { grid-template-columns: 1fr }
   .seg button { min-height: 48px }
-  .hide-phone { display: none }
   .hud { flex-wrap: wrap }
   .chip { min-height: 40px }
   .tip { width: 28px; height: 28px }
   .toggle input { width: 22px; height: 22px }
+  .well-hint { display: block }
+  .source .actions.two { grid-template-columns: auto auto; justify-content: start }
+  .source .actions .btn { width: auto; min-width: 88px }
+}
+@media (max-width: 600px) {
+  .hide-phone { display: none }
+  .phone-only { display: inline }
+  .path { display: none }
+  .app { padding: 12px 14px 120px }
+  .well, .well .gl, .well .gl canvas, .drop { min-height: 340px }
+  .source.card { padding: 12px }
+  .result-acts { display: none }
   .sticky {
     display: block !important; position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sticky);
     padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
     background: #f7f2e8ee; border-top: 1px solid var(--line);
     backdrop-filter: blur(10px);
+  }
+  .toast {
+    display: block; position: fixed; left: 12px; right: 12px; z-index: 31;
+    bottom: calc(76px + env(safe-area-inset-bottom));
   }
 }
 

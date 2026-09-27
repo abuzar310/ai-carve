@@ -471,6 +471,9 @@ export default function App() {
               <p className="meta nums">
                 {QUALITY[quality].label} · {board.widthMm} × {board.heightMm} mm · {board.depthMm} mm relief
                 {exportMb ? ` · ~${exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}` : ""}
+                <button type="button" className="linkish phone-only" disabled={!!busy} onClick={() => void regenerate()}>
+                  Regenerate
+                </button>
               </p>
             </div>
             <div className="result-acts">
@@ -531,6 +534,8 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {mesh ? <p className="well-hint">Drag to turn · pinch to zoom</p> : null}
 
           {mesh && report ? (
             <div className="info nums">
@@ -806,6 +811,7 @@ export default function App() {
                   <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveArtcam()}>
                     Height map for ArtCAM
                   </button>
+                  <p className="meta">Optional. Use this only if ArtCAM asks to open an image instead of an STL.</p>
                 </div>
               </>
             ) : (
@@ -881,6 +887,15 @@ export default function App() {
           <button type="button" className="btn pri full" disabled={!!busy} onClick={() => requestStl()}>
             {exportLabel}
           </button>
+        </div>
+      ) : null}
+      {err ? (
+        <div className="banner err toast" role="alert">
+          <p>{err}</p>
+        </div>
+      ) : note ? (
+        <div className="banner ok toast" role="status">
+          <p>{note}</p>
         </div>
       ) : null}
 
