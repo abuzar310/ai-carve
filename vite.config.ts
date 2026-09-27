@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  // transformers.js ships its own WASM/ONNX loaders; pre-bundling breaks them.
+  optimizeDeps: { exclude: ["@huggingface/transformers"] },
   server: {
     port: 3030,
     proxy: {

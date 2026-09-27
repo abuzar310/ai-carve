@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { heightToImageData, rasterFromImage } from "./lib/height";
-import { finishField } from "./lib/refine";
+import { applyContrast } from "./lib/refine";
+import { composeRelief } from "./lib/relief";
+import { estimateDepth } from "./lib/depth";
 import { QUALITY, buildRelief, constrainedPreview, fieldCols, restampRelief, triangleEstimate, type Quality, type ReliefMesh } from "./lib/mesh";
 import { writeStlAsync } from "./lib/stl";
 import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl, type MeshReport } from "./lib/validate";
@@ -85,6 +87,8 @@ export default function App() {
   const [normalize, setNormalize] = useState(true);
   const [contrast, setContrast] = useState(1.15);
   const [smooth, setSmooth] = useState(0);
+  const [clean, setClean] = useState(0.5);
+  const [detail, setDetail] = useState(0.35);
   const [quality, setQuality] = useState<Quality>("high");
   const [tint, setTint] = useState(true);
   const [busy, setBusy] = useState("");
@@ -92,7 +96,7 @@ export default function App() {
   const [note, setNote] = useState("");
   const [over, setOver] = useState(false);
   const [cutPass, setCutPass] = useState(0);
-  const [raw, setRaw] = useState<{ height: Float32Array; cols: number; rows: number } | null>(null);
+  const [raw, setRaw] = useState<{ height: Float32Array; depth: Float32Array | null; cols: number; rows: number } | null>(null);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
   const [wireframe, setWireframe] = useState(false);
   const [showBase, setShowBase] = useState(true);
@@ -126,8 +130,13 @@ export default function App() {
     const srcMax = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
     const cols = fieldCols(quality, srcMax);
     const next = await rasterFromImage(img, cols, invert);
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    let dep = await estimateDepth(img, iw, ih, next.cols, next.rows, (s) => setBusy(s));
+    if (dep && invert) dep = dep.map((v) => 1 - v);
+    if (!dep) setNote("Depth model unavailable: relief uses picture brightness only.");
     setBusy("Building 3D relief");
-    setRaw({ height: next.height, cols: next.cols, rows: next.rows });
+    setRaw({ height: next.height, depth: dep, cols: next.cols, rows: next.rows });
     setCutPass((n) => n + 1);
     setView((v) => ({ kind: "persp", n: v.n + 1 }));
     setBusy("Preparing preview");
@@ -135,20 +144,30 @@ export default function App() {
     setBusy("");
   }
 
-  const [fieldOpts, setFieldOpts] = useState({ contrast, smooth, normalize });
+  const [fieldOpts, setFieldOpts] = useState({ contrast, smooth, normalize, clean, detail });
   useEffect(() => {
     const t = window.setTimeout(() => {
       setFieldOpts((prev) =>
-        prev.contrast === contrast && prev.smooth === smooth && prev.normalize === normalize
+        prev.contrast === contrast &&
+        prev.smooth === smooth &&
+        prev.normalize === normalize &&
+        prev.clean === clean &&
+        prev.detail === detail
           ? prev
-          : { contrast, smooth, normalize },
+          : { contrast, smooth, normalize, clean, detail },
       );
     }, 180);
     return () => window.clearTimeout(t);
-  }, [contrast, smooth, normalize]);
+  }, [contrast, smooth, normalize, clean, detail]);
 
   const refined = useMemo(
-    () => (raw ? finishField(raw.height, raw.cols, raw.rows, fieldOpts) : null),
+    () =>
+      raw
+        ? applyContrast(
+            composeRelief({ luma: raw.height, depth: raw.depth, cols: raw.cols, rows: raw.rows }, { smooth: fieldOpts.smooth, clean: fieldOpts.clean, detail: fieldOpts.detail }),
+            fieldOpts.contrast,
+          )
+        : null,
     [raw, fieldOpts],
   );
 
@@ -190,7 +209,9 @@ export default function App() {
     meshBoard.baseMm !== board.baseMm ||
     fieldOpts.contrast !== contrast ||
     fieldOpts.smooth !== smooth ||
-    fieldOpts.normalize !== normalize;
+    fieldOpts.normalize !== normalize ||
+    fieldOpts.clean !== clean ||
+    fieldOpts.detail !== detail;
 
   async function generate() {
     setErr("");
@@ -387,6 +408,8 @@ export default function App() {
     clearPic();
     setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
     setContrast(1.15);
+    setClean(0.5);
+    setDetail(0.35);
     setSmooth(0);
     setInvert(false);
     setNormalize(true);
@@ -776,7 +799,7 @@ export default function App() {
                     }}
                   />
                 </div>
-                <small>How strongly light and dark become height.</small>
+                <small>Stretches the height range. 1 is neutral.</small>
               </label>
               <label className="field">
                 <span>
@@ -809,12 +832,76 @@ export default function App() {
                 </div>
                 <small>Leave this at 0 for a light cleanup. Higher values soften the ornament.</small>
               </label>
+              <label className="field">
+                <span>
+                  Clean texture <em>{clean}</em>
+                </span>
+                <div className="slide">
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={clean}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) setClean(Math.min(1, Math.max(0, n)));
+                    }}
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.05}
+                    min={0}
+                    max={1}
+                    value={clean}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) setClean(Math.min(1, Math.max(0, n)));
+                    }}
+                  />
+                </div>
+                <small>Removes wood grain, stone marks and scratches. Keeps bricks, folds and lettering.</small>
+              </label>
+              <label className="field">
+                <span>
+                  Fine detail <em>{detail}</em>
+                </span>
+                <div className="slide">
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.6}
+                    step={0.05}
+                    value={detail}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) setDetail(Math.min(0.6, Math.max(0, n)));
+                    }}
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.05}
+                    min={0}
+                    max={0.6}
+                    value={detail}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) setDetail(Math.min(0.6, Math.max(0, n)));
+                    }}
+                  />
+                </div>
+                <small>How much picture detail sits on top of the 3D shape.</small>
+              </label>
               <button
                 type="button"
                 className="btn ghost full"
                 onClick={() => {
                   setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 2 });
                   setContrast(1.15);
+                  setClean(0.5);
+                  setDetail(0.35);
                   setSmooth(0);
                   setInvert(false);
                   setNormalize(true);
@@ -940,7 +1027,7 @@ export default function App() {
         </div>
         <div className="foot-copy" id="help-copy">
           <h2>Help</h2>
-          <p>If the subject looks sunk, invert light and dark. Ultra makes a large file on a sharp photo. Height BMP is only needed if ArtCAM asks to open an image.</p>
+          <p>Keep invert off for normal carvings; turn it on only to cut the design into the wood like an engraving. Ultra makes a large file on a sharp photo. Height BMP is only needed if ArtCAM asks to open an image.</p>
         </div>
         <div className="foot-copy" id="formats">
           <h2>Supported formats</h2>
