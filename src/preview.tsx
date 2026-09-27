@@ -50,7 +50,8 @@ export function ReliefPreview({
     const el = host.current;
     if (!el) return;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x10140f);
+    scene.background = new THREE.Color(0x14110e);
+    scene.fog = new THREE.Fog(0x14110e, 90, 420);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 4000);
     camera.up.set(0, 0, 1);
     let renderer: THREE.WebGLRenderer;
@@ -76,9 +77,18 @@ export function ReliefPreview({
     const fill = new THREE.DirectionalLight(0x8aa0b8, 0.18);
     fill.position.set(-40, 16, 22);
     scene.add(fill);
-    const rim = new THREE.DirectionalLight(0xffdca0, 0.4);
+    const rim = new THREE.DirectionalLight(0xffdca0, 0.55);
     rim.position.set(-6, 64, 14);
     scene.add(rim);
+    const rake = new THREE.DirectionalLight(0xfff1c8, 1.6);
+    rake.position.set(-8, -28, 2);
+    scene.add(rake);
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(240, 64),
+      new THREE.MeshStandardMaterial({ color: 0x0c0a08, roughness: 1, metalness: 0 }),
+    );
+    floor.position.z = -0.4;
+    scene.add(floor);
 
     const geo = new THREE.BufferGeometry();
     const mat = new THREE.MeshStandardMaterial({
@@ -114,16 +124,17 @@ export function ReliefPreview({
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z, 1);
-      const dist = maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360)) * 1.25;
+      const fit = maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360));
       controls.target.copy(center);
-      if (v === "top") camera.position.set(center.x, center.y, center.z + dist);
-      else if (v === "front") camera.position.set(center.x, center.y - dist, center.z + maxDim * 0.15);
-      else if (v === "side") camera.position.set(center.x + dist, center.y, center.z + maxDim * 0.15);
-      else {
-        camera.position.set(center.x + dist * 1.02, center.y - dist * 1.28, center.z + Math.max(size.z * 2.8, dist * 0.12));
-      }
-      camera.near = Math.max(0.05, dist / 200);
-      camera.far = dist * 20;
+      controls.minDistance = maxDim * 0.35;
+      controls.maxDistance = maxDim * 10;
+      if (v === "top") camera.position.set(center.x, center.y, center.z + fit * 1.12);
+      else if (v === "front") camera.position.set(center.x, center.y - fit * 1.02, center.z + size.z * 0.45);
+      else if (v === "side") camera.position.set(center.x + fit * 1.02, center.y, center.z + size.z * 0.45);
+      else if (v === "fit") camera.position.set(center.x + fit * 0.7, center.y - fit * 0.86, center.z + fit * 0.3);
+      else camera.position.set(center.x + fit * 0.58, center.y - fit * 0.8, center.z + fit * 0.26);
+      camera.near = Math.max(0.05, maxDim / 200);
+      camera.far = maxDim * 40;
       camera.updateProjectionMatrix();
       controls.update();
     };
@@ -148,6 +159,8 @@ export function ReliefPreview({
       cancelAnimationFrame(raf);
       ro.disconnect();
       controls.dispose();
+      floor.geometry.dispose();
+      (floor.material as THREE.Material).dispose();
       geo.dispose();
       mat.dispose();
       renderer.dispose();
@@ -163,12 +176,16 @@ export function ReliefPreview({
     if (!a) return;
     a.geo.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
     a.geo.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
-    a.geo.setAttribute("color", new THREE.BufferAttribute(heightColors(mesh, tint), 3));
     a.geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     a.geo.computeBoundingBox();
     a.geo.computeBoundingSphere();
-    a.setRange(showBase, mesh.ranges.top, mesh.ranges.walls);
-  }, [mesh, showBase, tint]);
+  }, [mesh]);
+
+  useEffect(() => {
+    const a = api.current;
+    if (!a) return;
+    a.geo.setAttribute("color", new THREE.BufferAttribute(heightColors(mesh, tint), 3));
+  }, [tint, mesh]);
 
   useEffect(() => {
     const a = api.current;

@@ -50,6 +50,12 @@ function bytes(n: number): string {
   return `${(n / 1e6).toFixed(1)} MB`;
 }
 
+function trisLabel(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 1000)}K`;
+  return String(n);
+}
+
 function stagesFor(busy: string): readonly string[] {
   if (!busy) return [];
   if (busy === "Generating image" || busy === "Drawing") return DRAW_STAGES;
@@ -329,9 +335,16 @@ export default function App() {
           <h1 className="word">Carve</h1>
           <p className="lede">Turn an image into a CNC-ready 3D relief.</p>
         </div>
-        <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
-          <i />
-          {busy || (ready ? "Ready" : "Waiting for an image")}
+        <div className="top-actions">
+          <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
+            <i />
+            {busy || (ready ? "Ready" : "Waiting for an image")}
+          </div>
+          {ready && (
+            <button type="button" className="btn pri hide-phone" disabled={!!busy} onClick={() => requestStl()}>
+              {exportLabel}
+            </button>
+          )}
         </div>
       </header>
 
@@ -346,6 +359,7 @@ export default function App() {
       </p>
 
       <div className="work">
+        <div className="stage">
         <section
           className="well"
           aria-label={mesh ? "3D relief" : "Upload an image"}
@@ -376,38 +390,6 @@ export default function App() {
             </div>
           )}
 
-          {mesh && (
-            <div className="hud" role="toolbar" aria-label="3D views">
-              <button type="button" className="chip" aria-pressed={view.kind === "persp"} onClick={() => goView("persp")}>
-                Perspective
-              </button>
-              <button type="button" className="chip" onClick={() => goView("top")}>
-                Top
-              </button>
-              <button type="button" className="chip" onClick={() => goView("front")}>
-                Front
-              </button>
-              <button type="button" className="chip" onClick={() => goView("side")}>
-                Side
-              </button>
-              <button type="button" className="chip" onClick={() => goView("fit")}>
-                Fit
-              </button>
-              <button type="button" className="chip" onClick={() => goView("persp")}>
-                Reset
-              </button>
-              <button type="button" className="chip" aria-pressed={wireframe} onClick={() => setWireframe((v) => !v)}>
-                Wireframe
-              </button>
-              <button type="button" className="chip" aria-pressed={showBase} onClick={() => setShowBase((v) => !v)}>
-                Base
-              </button>
-              <button type="button" className="chip" aria-pressed={tint} onClick={() => setTint((v) => !v)}>
-                Depth tint
-              </button>
-            </div>
-          )}
-
           {mesh && report && (
             <div className="info">
               <b>
@@ -416,7 +398,7 @@ export default function App() {
               <br />
               Depth {board.depthMm} mm · Base {board.baseMm} mm
               <br />
-              {QUALITY[quality].label} · {exportTris.toLocaleString()} triangles
+              {QUALITY[quality].label} · {trisLabel(exportTris)} triangles
             </div>
           )}
 
@@ -440,6 +422,39 @@ export default function App() {
             </div>
           )}
         </section>
+
+        {mesh && (
+          <div className="hud" role="toolbar" aria-label="3D views">
+            <button type="button" className="chip" aria-pressed={view.kind === "persp"} onClick={() => goView("persp")}>
+              3/4
+            </button>
+            <button type="button" className="chip" aria-pressed={view.kind === "top"} onClick={() => goView("top")}>
+              Top
+            </button>
+            <button type="button" className="chip" aria-pressed={view.kind === "front"} onClick={() => goView("front")}>
+              Front
+            </button>
+            <button type="button" className="chip" aria-pressed={view.kind === "side"} onClick={() => goView("side")}>
+              Side
+            </button>
+            <button type="button" className="chip" onClick={() => goView("fit")}>
+              Fit
+            </button>
+            <button type="button" className="chip" onClick={() => goView("persp")}>
+              Reset
+            </button>
+            <button type="button" className="chip" aria-pressed={wireframe} onClick={() => setWireframe((v) => !v)}>
+              Wire
+            </button>
+            <button type="button" className="chip" aria-pressed={showBase} onClick={() => setShowBase((v) => !v)}>
+              Base
+            </button>
+            <button type="button" className="chip" aria-pressed={tint} onClick={() => setTint((v) => !v)}>
+              Tint
+            </button>
+          </div>
+        )}
+        </div>
 
         <aside className="rail">
           {pic && (
@@ -669,7 +684,7 @@ export default function App() {
                   STL · {board.widthMm} × {board.heightMm} × {thickMm} mm
                 </p>
                 <p className="meta">
-                  {QUALITY[quality].label} · ~{exportTris.toLocaleString()} triangles · ~{exportMb < 1 ? `${Math.round(exportMb * 1000)} KB` : `${exportMb.toFixed(1)} MB`}
+                  {QUALITY[quality].label} · ~{trisLabel(exportTris)} triangles · ~{exportMb < 1 ? `${Math.round(exportMb * 1000)} KB` : `${exportMb.toFixed(1)} MB`}
                 </p>
                 <div className="actions" style={{ marginTop: 12 }}>
                   <button type="button" className="btn pri full hide-phone" disabled={!!busy} onClick={() => requestStl()}>
