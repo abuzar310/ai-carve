@@ -496,6 +496,7 @@ export default function App() {
 
         {mesh ? (
           <div className="hud" role="toolbar" aria-label="3D views">
+            <p className="hint-turn">Drag to turn · scroll or pinch to zoom</p>
             <button type="button" className="chip" aria-pressed={view.kind === "persp"} onClick={() => goView("persp")}>
               3/4
             </button>
