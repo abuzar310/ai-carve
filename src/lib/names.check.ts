@@ -1,4 +1,4 @@
-import { artcamNames } from "./names.ts";
+import { artcamNames, sourceStem } from "./names.ts";
 
 let n = 0;
 const ok = (cond: boolean, msg: string) => {
@@ -6,12 +6,19 @@ const ok = (cond: boolean, msg: string) => {
   if (!cond) throw new Error("FAIL: " + msg);
 };
 
-const a = artcamNames(200, 200, 4, 1_758_816_000_000, () => 0.123456);
-const b = artcamNames(200, 200, 4, 1_758_816_000_001, () => 0.987654);
-ok(a.bmp.endsWith(".bmp") && a.stl.endsWith(".stl"), "bmp+stl");
-ok(!("tif" in a) && !a.bmp.includes(".rlf") && !a.stl.includes(".rlf"), "no rlf");
-ok(a.bmp !== b.bmp && a.stl !== b.stl, "different each time");
-ok(/^carve-200x200-4mm-[a-z0-9]+-[a-z0-9]+\.bmp$/.test(a.bmp), "size in name");
-ok(a.stl.startsWith(a.bmp.slice(0, -4)), "same stem");
+ok(sourceStem("carve-ornament.bmp") === "ornament", "file stem");
+ok(sourceStem("/tmp/My Photo (1).JPG") === "my-photo-1", "sanitize");
+ok(sourceStem("Generated image") === "relief", "generated fallback");
+ok(sourceStem("Peacock on a teak panel, side view").startsWith("peacock-on-a-teak") && sourceStem("Peacock on a teak panel, side view").length <= 28, "prompt");
+
+const a = artcamNames("carve-ornament.bmp", 100, 100, 3);
+ok(a.stl === "ornament-100x100-3mm.stl", "stl from image");
+ok(a.bmp === "ornament-100x100-3mm.bmp", "bmp from image");
+ok(a.stl === artcamNames("carve-ornament.bmp", 100, 100, 3).stl, "stable");
+ok(!a.stl.includes("muj") && !/\d{6,}/.test(a.stl), "no random id");
+
+const b = artcamNames("Peacock on a teak panel", 200, 200, 4);
+ok(b.stl.startsWith("peacock-") && b.stl.endsWith(".stl"), "prompt stl");
+ok(!("tif" in a) && !a.bmp.includes(".rlf"), "no rlf");
 
 console.log(`carve names.check OK (${n} assertions)`);

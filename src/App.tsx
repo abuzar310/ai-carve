@@ -262,7 +262,7 @@ export default function App() {
       out = null;
       setBusy("Preparing download");
       await tick();
-      const { stl } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
+      const { stl } = artcamNames(exportSource(), board.widthMm, board.heightMm, board.depthMm);
       const blob = new Blob([buf], { type: "model/stl" });
       setBusy("Download ready");
       const how = await saveFile(stl, blob, "model/stl");
@@ -299,7 +299,7 @@ export default function App() {
       const h = refined ?? raw.height;
       const c = raw.cols;
       const r = raw.rows;
-      const { bmp } = artcamNames(board.widthMm, board.heightMm, board.depthMm);
+      const { bmp } = artcamNames(exportSource(), board.widthMm, board.heightMm, board.depthMm);
       await saveFile(bmp, new Blob([reliefBmp(h, c, r, board.widthMm, board.heightMm) as BlobPart], { type: "image/bmp" }), "image/bmp");
       setNote("Height map downloaded. Use this if ArtCAM asks to open an image.");
     } catch (e) {
@@ -317,6 +317,12 @@ export default function App() {
 
   function pickFile() {
     fileRef.current?.click();
+  }
+
+  function exportSource() {
+    const n = fileMeta?.name || "";
+    if (n && !/^generated image$/i.test(n)) return n;
+    return prompt;
   }
 
   const stageList = stagesFor(busy);
