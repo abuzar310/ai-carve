@@ -701,10 +701,6 @@ export default function App() {
               <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
               Invert light and dark
             </label>
-            <label className="toggle">
-              <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} />
-              Stretch to full depth
-            </label>
           </div>
 
           <details className="card adv">
