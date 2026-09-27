@@ -75,10 +75,23 @@ export function exportCols(q: Quality, srcMax = Infinity): number {
   return fieldCols(q, srcMax);
 }
 
+/** Boundary of the board, clockwise in grid space, corners once. */
+function boundaryRing(gx: number, gy: number): Array<[number, number]> {
+  const ring: Array<[number, number]> = [];
+  for (let x = 0; x < gx; x++) ring.push([x, 0]);
+  for (let y = 1; y < gy; y++) ring.push([gx - 1, y]);
+  for (let x = gx - 2; x >= 0; x--) ring.push([x, gy - 1]);
+  for (let y = gy - 2; y >= 1; y--) ring.push([0, y]);
+  return ring;
+}
+
 export function triangleEstimate(cols: number, rows: number): number {
   const gx = Math.max(2, cols | 0);
   const gy = Math.max(2, rows | 0);
-  return (gx - 1) * (gy - 1) * 4 + 4 * (gx + gy - 2);
+  const top = (gx - 1) * (gy - 1) * 2;
+  const walls = 4 * (gx + gy - 2);
+  const bottom = 2 * (gx + gy - 2);
+  return top + walls + bottom;
 }
 
 function addTri(idx: Uint32Array, n: { i: number }, a: number, b: number, c: number) {
@@ -99,10 +112,12 @@ export function buildRelief(h: Float32Array, cols: number, rows: number, opts: R
   if (!(widthMm > 0) || !(heightMm > 0)) throw new Error("board size must be > 0");
 
   const layer = gx * gy;
-  const vertexCount = layer * 2;
-  const topCells = (gx - 1) * (gy - 1);
+  const ring = boundaryRing(gx, gy);
+  const vertexCount = layer + ring.length + 1;
+  const topTris = (gx - 1) * (gy - 1) * 2;
   const wallCount = 4 * (gx + gy - 2);
-  const triangleCount = topCells * 4 + wallCount;
+  const bottomTris = ring.length;
+  const triangleCount = topTris + wallCount + bottomTris;
   const positions = new Float32Array(vertexCount * 3);
   const indices = new Uint32Array(triangleCount * 3);
   const dx = widthMm / (gx - 1);
@@ -120,19 +135,36 @@ export function buildRelief(h: Float32Array, cols: number, rows: number, opts: R
       if (z < topZMin) topZMin = z;
       if (z > topZMax) topZMax = z;
       const t = (y * gx + x) * 3;
-      const b = (layer + y * gx + x) * 3;
       positions[t] = px;
       positions[t + 1] = py;
       positions[t + 2] = z;
-      positions[b] = px;
-      positions[b + 1] = py;
-      positions[b + 2] = 0;
     }
   }
+  const ringAt = (x: number, y: number) => {
+    const t = (y * gx + x) * 3;
+    return [positions[t]!, positions[t + 1]!] as const;
+  };
+  for (let i = 0; i < ring.length; i++) {
+    const [x, y] = ring[i]!;
+    const [px, py] = ringAt(x, y);
+    const b = (layer + i) * 3;
+    positions[b] = px;
+    positions[b + 1] = py;
+    positions[b + 2] = 0;
+  }
+  const center = layer + ring.length;
+  positions[center * 3] = 0;
+  positions[center * 3 + 1] = 0;
+  positions[center * 3 + 2] = 0;
 
   const n = { i: 0 };
   const top = (x: number, y: number) => y * gx + x;
-  const bot = (x: number, y: number) => layer + y * gx + x;
+  const botOf = new Map<number, number>();
+  for (let i = 0; i < ring.length; i++) {
+    const [x, y] = ring[i]!;
+    botOf.set(y * gx + x, layer + i);
+  }
+  const bot = (x: number, y: number) => botOf.get(y * gx + x)!;
 
   for (let y = 0; y < gy - 1; y++) {
     for (let x = 0; x < gx - 1; x++) {
@@ -160,16 +192,7 @@ export function buildRelief(h: Float32Array, cols: number, rows: number, opts: R
   }
   const wallIdx = n.i;
 
-  for (let y = 0; y < gy - 1; y++) {
-    for (let x = 0; x < gx - 1; x++) {
-      const a = bot(x, y);
-      const b = bot(x + 1, y);
-      const c = bot(x + 1, y + 1);
-      const d = bot(x, y + 1);
-      addTri(indices, n, a, b, c);
-      addTri(indices, n, a, c, d);
-    }
-  }
+  for (let i = 0; i < ring.length; i++) addTri(indices, n, center, layer + i, layer + ((i + 1) % ring.length));
   if (n.i !== indices.length) throw new Error("index fill mismatch");
 
   const normals = new Float32Array(positions.length);
@@ -241,15 +264,24 @@ export function restampRelief(mesh: ReliefMesh, h: Float32Array, opts: ReliefOpt
       if (z < topZMin) topZMin = z;
       if (z > topZMax) topZMax = z;
       const t = (y * gx + x) * 3;
-      const b = (layer + y * gx + x) * 3;
       positions[t] = px;
       positions[t + 1] = py;
       positions[t + 2] = z;
-      positions[b] = px;
-      positions[b + 1] = py;
-      positions[b + 2] = 0;
     }
   }
+  const ring = boundaryRing(gx, gy);
+  for (let i = 0; i < ring.length; i++) {
+    const [x, y] = ring[i]!;
+    const t = (y * gx + x) * 3;
+    const b = (layer + i) * 3;
+    positions[b] = positions[t]!;
+    positions[b + 1] = positions[t + 1]!;
+    positions[b + 2] = 0;
+  }
+  const center = (layer + ring.length) * 3;
+  positions[center] = 0;
+  positions[center + 1] = 0;
+  positions[center + 2] = 0;
   fillVertexNormals(positions, mesh.indices, mesh.normals);
   mesh.meta = {
     ...mesh.meta,

@@ -100,16 +100,16 @@ ok(fieldCols("ultra", 256) === 1024, "ultra does not enlarge a small picture pas
 ok(fieldCols("ultra", 1100) === 1100 && fieldCols("ultra", 4000) === 1280, "ultra keeps extra detail only from a larger picture");
 ok(previewCols("high", true, 1024) === 1024, "preview grid matches the export field");
 ok(previewCols("standard", true, 4000) === 512, "preview does not drop to a phone thumbnail");
-ok(triangleEstimate(220, 220) === 193596, "standard triangle estimate");
+ok(triangleEstimate(220, 220) === 98550, "220 is relief cells plus a flat base cap");
 ok(validateMesh(buildRelief(grid("flat", 16, 16), 16, 16, board)).mode === "full", "small mesh full topology");
 ok(validateMesh(perfMesh).mode === "full", "160² still full");
 const stdH = normalizeHeight(grid("carving", 220, 220));
 const stdMesh = buildRelief(stdH, 220, 220, board);
-ok(validateMesh(stdMesh).mode === "export", "220² export path skips topology maps");
+ok(validateMesh(stdMesh).mode === "full", "220² flat cap is small enough for a full topology check");
 ok(validateMeshQuick(stdMesh).ok, "220 quick ok");
 const stdBuf = writeStl(stdMesh);
 const stdR = validateStl(stdBuf);
-ok(stdR.ok && stdR.mode === "export" && stdBuf.byteLength === 84 + 193596 * 50, "standard export scan");
+ok(stdR.ok && stdR.mode === "export" && stdBuf.byteLength === 84 + 98550 * 50, "standard export scan");
 const asyncBuf = await writeStlAsync(stdMesh, 10_000, async () => {});
 ok(asyncBuf.byteLength === stdBuf.byteLength, "async writer size");
 
@@ -165,6 +165,8 @@ const hiH = normalizeHeight(grid("carving", 1024, 1024));
 const hi = buildRelief(hiH, 1024, 1024, board);
 ok(hi.meta.cols === 1024 && hi.meta.rows === 1024, "1024 field is the mesh grid");
 ok(hi.meta.triangleCount === triangleEstimate(1024, 1024), `1024 triangles ${hi.meta.triangleCount}`);
+ok(hi.ranges.top / 3 === 1023 * 1023 * 2 && hi.ranges.bottom / 3 === 4092, "1024 relief keeps every cell and the base is a cap");
+ok(hi.meta.vertexCount === 1024 * 1024 + 2 * (1024 + 1024 - 2) + 1, "1024 does not duplicate the flat base grid");
 ok(hi.meta.topZMax - hi.meta.topZMin > 1.5, "1024 relief is not flat");
 let finite = true;
 for (let i = 0; i < hi.positions.length; i += 997) {
