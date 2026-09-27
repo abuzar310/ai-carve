@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { heightToImageData, normalizeHeight, rasterFromImage, resampleHeight } from "./lib/height";
 import { refineHeight } from "./lib/refine";
 import { QUALITY, buildRelief, constrainedPreview, fieldCols, previewCols, triangleEstimate, type Quality } from "./lib/mesh";
@@ -7,14 +7,20 @@ import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, 
 import { reliefBmp } from "./lib/bmp";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
-import { ReliefPreview } from "./preview";
+
+const ReliefPreview = lazy(async () => {
+  const m = await import("./preview");
+  return { default: m.ReliefPreview };
+});
 
 const BIAS = ", ornamental wood carving relief, high contrast, single subject, no text, no watermark";
+const nf = new Intl.NumberFormat();
+const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
 const QUALITY_HINT: Record<Quality, string> = {
-  standard: "Fast test",
-  high: "CNC ready",
-  ultra: "Maximum detail",
+  standard: "Draft",
+  high: "Shop work",
+  ultra: "Finest field",
 };
 
 const BUILD_STAGES = ["Preparing image", "Generating depth", "Building 3D relief", "Preparing preview"] as const;
@@ -45,9 +51,9 @@ function sayErr(e: unknown): string {
 }
 
 function bytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1e6) return `${Math.round(n / 1024)} KB`;
-  return `${(n / 1e6).toFixed(1)} MB`;
+  if (n < 1024) return `${n}\u00a0B`;
+  if (n < 1e6) return `${Math.round(n / 1024)}\u00a0KB`;
+  return `${nf1.format(n / 1e6)}\u00a0MB`;
 }
 
 function trisLabel(n: number): string {
@@ -89,6 +95,7 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const mobile = constrainedPreview();
   const shareOk = useMemo(() => canShareFile(), []);
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     if (!note) return;
@@ -222,7 +229,7 @@ export default function App() {
   const exportTris = raw ? triangleEstimate(raw.cols, raw.rows) : 0;
   const exportMb = raw ? stlBytesEstimate(exportTris) / 1e6 : 0;
   const thickMm = board.depthMm + board.baseMm;
-  const step = !pic ? "upload" : !ready ? "generate" : "export";
+  const job = !pic ? "Add a picture to start." : busy ? `${busy}…` : ready ? "Download the STL for ArtCAM." : "Building the relief…";
 
   async function saveStl() {
     if (!refined || !raw) return;
@@ -317,10 +324,13 @@ export default function App() {
 
   return (
     <div className="app">
+      <a className="skip" href="#workspace">Skip to workspace</a>
       <input
         ref={fileRef}
         hidden
         type="file"
+        name="source_image"
+        autoComplete="off"
         accept="image/jpeg,image/png,image/webp,image/*"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -331,34 +341,27 @@ export default function App() {
 
       <header className="top">
         <div className="brand">
-          <div className="kicker">AI Carve</div>
-          <h1 className="word">Carve</h1>
-          <p className="lede">Turn an image into a CNC-ready 3D relief.</p>
+          <div className="kicker" translate="no">AI Carve</div>
+          <h1 className="word" translate="no">Carve</h1>
+          <p className="lede">Turn a picture into a solid 3D relief and download an STL for ArtCAM.</p>
+          <p className="trust">Pictures stay on this device. Nothing is written to a shop database.</p>
         </div>
         <div className="top-actions">
           <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
             <i />
-            {busy || (ready ? "Ready" : "Waiting for an image")}
+            {busy ? `${busy}…` : ready ? "Ready" : "Add a picture"}
           </div>
-          {ready && (
+          {ready ? (
             <button type="button" className="btn pri hide-phone" disabled={!!busy} onClick={() => requestStl()}>
               {exportLabel}
             </button>
-          )}
+          ) : null}
         </div>
       </header>
 
-      <p className="path" aria-label="Progress">
-        <b className={step === "upload" ? "now" : pic ? "did" : undefined}>1. Upload</b>
-        <span>→</span>
-        <b className={pic && !ready ? "now" : ready ? "did" : undefined}>2. Size</b>
-        <span>→</span>
-        <b className={ready ? "did" : undefined}>3. Preview</b>
-        <span>→</span>
-        <b className={step === "export" ? "now" : undefined}>4. Download</b>
-      </p>
+      <p className="job">{job}</p>
 
-      <div className="work">
+      <main id="workspace" className="work">
         <div className="stage">
         <section
           className="well"
@@ -376,7 +379,9 @@ export default function App() {
           }}
         >
           {mesh ? (
-            <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
+            <Suspense fallback={<div className="gl ph">Loading 3D preview…</div>}>
+              <ReliefPreview key={cutPass} mesh={mesh} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
+            </Suspense>
           ) : (
             <div className={"drop" + (over ? " on" : "")}>
               <div>
@@ -385,27 +390,27 @@ export default function App() {
                 <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
                   Choose a picture
                 </button>
-                <p className="hint">JPG, PNG, or WebP · drag and drop works too</p>
+                <p className="hint">JPG, PNG, or WebP. Drag and drop works too.</p>
               </div>
             </div>
           )}
 
-          {mesh && report && (
-            <div className="info">
+          {mesh && report ? (
+            <div className="info nums">
               <b>
-                {board.widthMm} × {board.heightMm} mm
+                {board.widthMm} × {board.heightMm}&nbsp;mm
               </b>
               <br />
-              Depth {board.depthMm} mm · Base {board.baseMm} mm
+              Depth {board.depthMm}&nbsp;mm · Base {board.baseMm}&nbsp;mm
               <br />
               {QUALITY[quality].label} · {trisLabel(exportTris)} triangles
             </div>
-          )}
+          ) : null}
 
-          {busy && (
+          {busy ? (
             <div className="veil" role="status" aria-live="polite">
               <div>
-                <strong>{busy}</strong>
+                <strong>{busy}…</strong>
                 <ol className="stages">
                   {stageList.map((s) => {
                     const i = stageList.indexOf(busy);
@@ -420,10 +425,10 @@ export default function App() {
                 </ol>
               </div>
             </div>
-          )}
+          ) : null}
         </section>
 
-        {mesh && (
+        {mesh ? (
           <div className="hud" role="toolbar" aria-label="3D views">
             <button type="button" className="chip" aria-pressed={view.kind === "persp"} onClick={() => goView("persp")}>
               3/4
@@ -453,15 +458,15 @@ export default function App() {
               Tint
             </button>
           </div>
-        )}
+        ) : null}
         </div>
 
         <aside className="rail">
-          {pic && (
+          {pic ? (
             <div className="card">
               <h3>Image</h3>
               <div className="thumb">
-                <img src={pic} alt="Design to carve" />
+                <img src={pic} alt={fileMeta?.name || "Design to carve"} width={72} height={72} />
                 <div>
                   <p>{fileMeta?.name || "Picture"}</p>
                   <small>{fileMeta ? bytes(fileMeta.size) : "Ready"}</small>
@@ -477,14 +482,14 @@ export default function App() {
               </div>
               <canvas ref={depth} hidden />
             </div>
-          )}
+          ) : null}
 
           <div className="card">
             <h3>Model</h3>
             <div className="pair">
               <label className="field">
                 <span>
-                  Width <em>{board.widthMm} mm</em>
+                  Width <em className="nums">{board.widthMm}&nbsp;mm</em>
                 </span>
                 <div className="slide">
                   <input type="range" min={20} max={400} step={1} value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
@@ -493,7 +498,7 @@ export default function App() {
               </label>
               <label className="field">
                 <span>
-                  Height <em>{board.heightMm} mm</em>
+                  Height <em className="nums">{board.heightMm}&nbsp;mm</em>
                 </span>
                 <div className="slide">
                   <input type="range" min={20} max={400} step={1} value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
@@ -514,7 +519,7 @@ export default function App() {
                       ?
                     </button>
                   </span>
-                  <em>{board.depthMm} mm</em>
+                  <em className="nums">{board.depthMm}&nbsp;mm</em>
                 </span>
                 <div className="slide">
                   <input type="range" min={0.5} max={20} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
@@ -530,7 +535,7 @@ export default function App() {
                       ?
                     </button>
                   </span>
-                  <em>{board.baseMm} mm</em>
+                  <em className="nums">{board.baseMm}&nbsp;mm</em>
                 </span>
                 <div className="slide">
                   <input type="range" min={0.5} max={20} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
@@ -551,7 +556,7 @@ export default function App() {
             <h3>Detail quality</h3>
             <div className="seg" role="group" aria-label="Detail quality">
               {(Object.keys(QUALITY) as Quality[]).map((k) => (
-                <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => setQuality(k)}>
+                <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => startTransition(() => setQuality(k))}>
                   <strong>{QUALITY[k].label}</strong>
                   <span>{QUALITY_HINT[k]}</span>
                 </button>
@@ -561,8 +566,8 @@ export default function App() {
               {quality === "ultra"
                 ? "Finest sampling from your picture. Large STL on a sharp photo."
                 : quality === "high"
-                  ? "Best starting point for ArtCAM Import 3D Model."
-                  : "Fewer triangles. Use this to test size and depth."}
+                  ? "Use this for ArtCAM Import 3D Model."
+                  : "Fewer triangles. Check size and depth first."}
             </p>
           </div>
 
@@ -660,7 +665,7 @@ export default function App() {
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Peacock on a teak panel"
+                  placeholder="Peacock on a teak panel…"
                   aria-label="What to carve"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) {
@@ -680,11 +685,12 @@ export default function App() {
             {ready ? (
               <>
                 <p className="ready-title">Ready to export</p>
-                <p className="export-dim">
-                  STL · {board.widthMm} × {board.heightMm} × {thickMm} mm
+                <p className="export-dim nums">
+                  STL · {board.widthMm} × {board.heightMm} × {thickMm}&nbsp;mm
                 </p>
-                <p className="meta">
-                  {QUALITY[quality].label} · ~{trisLabel(exportTris)} triangles · ~{exportMb < 1 ? `${Math.round(exportMb * 1000)} KB` : `${exportMb.toFixed(1)} MB`}
+                <p className="meta nums">
+                  {QUALITY[quality].label} · ~{trisLabel(exportTris)} triangles · ~
+                  {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}
                 </p>
                 <div className="actions" style={{ marginTop: 12 }}>
                   <button type="button" className="btn pri full hide-phone" disabled={!!busy} onClick={() => requestStl()}>
@@ -698,41 +704,49 @@ export default function App() {
             ) : (
               <>
                 <h3>Export</h3>
-                <p className="meta">Upload a picture to build the relief. The download appears here when the model is ready.</p>
+                <p className="meta">Add a picture first. The STL download appears here when the relief is ready.</p>
               </>
             )}
           </div>
 
-          {err && (
+          {err ? (
             <div className="banner err" role="alert">
               <p>{err}</p>
               <button type="button" className="linkish" onClick={() => setErr("")}>
                 Dismiss
               </button>
             </div>
-          )}
-          {note && (
+          ) : null}
+          {note ? (
             <div className="banner ok" role="status">
               <p>{note}</p>
             </div>
-          )}
+          ) : null}
         </aside>
-      </div>
+      </main>
 
-      {ready && (
+      <footer className="foot">
+        <h2>How Carve works</h2>
+        <p>
+          Light areas rise. Dark areas cut. Set width, height, relief depth, and base, then download an STL for ArtCAM Import 3D Model.
+        </p>
+        <p>Use the height BMP if ArtCAM asks you to open an image. Pictures never leave this browser for a shop database.</p>
+      </footer>
+
+      {ready ? (
         <div className="sticky">
           <button type="button" className="btn pri full" disabled={!!busy} onClick={() => requestStl()}>
             {exportLabel}
           </button>
         </div>
-      )}
+      ) : null}
 
-      {warn && (
+      {warn ? (
         <div className="modal" role="dialog" aria-modal="true" aria-labelledby="warn-title">
           <div className="card">
             <h2 id="warn-title">Large Ultra export</h2>
             <p>
-              This file is about {warn.mb.toFixed(0)} MB ({warn.tris.toLocaleString()} triangles). Phones can struggle. A computer is the safer place to save Ultra.
+              This file is about {nf1.format(warn.mb)}&nbsp;MB ({nf.format(warn.tris)} triangles). Phones can struggle. Save Ultra on a computer.
             </p>
             <div className="actions" style={{ marginTop: 12 }}>
               <button type="button" className="btn pri full" onClick={() => void saveStl()}>
@@ -754,7 +768,7 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

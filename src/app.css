@@ -14,14 +14,19 @@
   --shadow: 0 1px 0 #fff8 inset, 0 12px 32px #1a181414;
   --r: 12px;
   --r-sm: 8px;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --z-hud: 2;
+  --z-sticky: 30;
+  --z-modal: 40;
+  --z-skip: 50;
   --ui: "Atkinson Hyperlegible", system-ui, sans-serif;
   --display: "Fraunces", "Times New Roman", serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
 * { box-sizing: border-box }
-html { -webkit-text-size-adjust: 100% }
+html { -webkit-text-size-adjust: 100%; color-scheme: light }
 html, body, #root { margin: 0; min-height: 100% }
 body {
   overflow-x: hidden;
@@ -33,6 +38,7 @@ body {
   font-size: 16px;
   line-height: 1.45;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: #b56a1a33;
 }
 button, input, textarea, select { font: inherit; color: inherit }
 button { cursor: pointer; border: 0; background: none }
@@ -42,7 +48,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   outline-offset: 2px;
 }
 
+.skip {
+  position: absolute; left: 12px; top: -48px; z-index: var(--z-skip);
+  padding: 8px 12px; background: var(--ink); color: var(--paper); border-radius: var(--r-sm);
+}
+.skip:focus { top: 12px }
 .app { max-width: 1280px; margin: 0 auto; padding: 20px 20px 96px }
+main { scroll-margin-top: 16px }
+h1, h2 { text-wrap: balance }
+.nums { font-variant-numeric: tabular-nums }
 .top {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
   margin-bottom: 20px;
@@ -56,7 +70,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   margin: 0; font-family: var(--display); font-size: 42px; font-weight: 560;
   letter-spacing: -.03em; line-height: .95;
 }
-.lede { margin: 0; max-width: 34em; color: var(--mute) }
+.lede { margin: 0; max-width: 36em; color: var(--mute) }
+.trust { margin: 6px 0 0; max-width: 36em; color: var(--mute); font-size: 14px }
+.job { margin: 0 0 16px; color: var(--ink); font-size: 15px }
 .top-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0 }
 .status {
   display: flex; align-items: center; gap: 8px;
@@ -117,6 +133,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   display: grid; place-items: center;
   background: #14110ecc; color: #f3eadc; text-align: center;
   padding: 24px;
+  animation: fade 180ms var(--ease-out);
 }
 .veil strong { display: block; font-family: var(--display); font-size: 26px; font-weight: 520 }
 .stages { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px }
@@ -129,6 +146,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .hud {
   display: flex; flex-wrap: wrap; gap: 6px;
+  z-index: var(--z-hud);
 }
 @media (min-width: 901px) {
   .hud {
@@ -140,7 +158,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   min-height: 36px; padding: 0 10px;
   border-radius: 999px; background: #f7f2e8ee; color: var(--ink);
   font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease;
 }
+.chip:hover { background: #fffdf8 }
+.chip:active { transform: scale(0.97) }
 .chip[aria-pressed="true"], .chip.on { background: var(--brass); color: var(--brass-ink) }
 .info {
   position: absolute; left: 12px; bottom: 12px; z-index: 2;
@@ -198,10 +219,15 @@ input[type="range"] { width: 100%; accent-color: var(--brass); min-height: 28px 
 .btn {
   min-height: 48px; padding: 0 16px; border-radius: var(--r-sm);
   font-weight: 700;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease;
 }
+.btn:active:not(:disabled) { transform: scale(0.97) }
 .btn.pri { background: var(--brass); color: var(--brass-ink) }
+.btn.pri:hover:not(:disabled) { background: #9a5814 }
 .btn.ink { background: var(--ink); color: var(--paper) }
+.btn.ink:hover:not(:disabled) { background: #000 }
 .btn.ghost { background: #fffdf8; border: 1px solid var(--line); font-weight: 600 }
+.btn.ghost:hover:not(:disabled) { background: #efe8d8 }
 .btn.full { width: 100% }
 .actions { display: grid; gap: 8px }
 .actions.two { grid-template-columns: 1fr 1fr }
@@ -240,11 +266,15 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
 .export-dim { margin: 0 0 12px; font-size: 15px }
 
 .modal {
-  position: fixed; inset: 0; z-index: 40;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   display: grid; place-items: center; padding: 20px;
   background: #14110e66;
+  overscroll-behavior: contain;
 }
-.modal .card { max-width: 420px; width: 100% }
+.modal .card {
+  max-width: 420px; width: 100%;
+  animation: pop 220ms var(--ease-out);
+}
 .modal h2 { margin: 0 0 8px; font-family: var(--display); font-size: 26px; font-weight: 520 }
 
 .sticky { display: none !important }
@@ -265,7 +295,7 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
   .tip { width: 28px; height: 28px }
   .toggle input { width: 22px; height: 22px }
   .sticky {
-    display: block !important; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    display: block !important; position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sticky);
     padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
     background: #f7f2e8ee; border-top: 1px solid var(--line);
     backdrop-filter: blur(10px);
@@ -276,4 +306,14 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
   *, *::before, *::after { animation: none !important; transition: none !important }
 }
 
+.foot {
+  margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line);
+  color: var(--mute); font-size: 14px; max-width: 65ch; display: grid; gap: 10px;
+}
+.foot h2 { margin: 0; font-size: 15px; color: var(--ink) }
+.foot p { margin: 0 }
+.foot ul { margin: 0; padding-left: 1.2em }
+
 @keyframes pulse { 50% { opacity: .4 } }
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pop { from { opacity: 0; transform: scale(0.96) } to { opacity: 1; transform: none } }
