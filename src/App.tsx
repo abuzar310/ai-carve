@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { heightToImageData, rasterFromImage } from "./lib/height";
 import { applyContrast } from "./lib/refine";
-import { composeRelief } from "./lib/relief";
+import { composeRelief, silhouette } from "./lib/relief";
 import { estimateDepth } from "./lib/depth";
+import { PIECES, boardForPiece, circumferenceMm, detectPiece, type Piece } from "./lib/piece";
 import { QUALITY, buildRelief, constrainedPreview, fieldCols, isSurfaceOnly, restampRelief, triangleEstimate, type Quality, type ReliefMesh } from "./lib/mesh";
 import { writeStlAsync } from "./lib/stl";
 import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl, type MeshReport } from "./lib/validate";
@@ -85,7 +86,7 @@ export default function App() {
   const [fileMeta, setFileMeta] = useState<FileMeta | null>(null);
   const [invert, setInvert] = useState(false);
   const [normalize, setNormalize] = useState(true);
-  const [contrast, setContrast] = useState(1.15);
+  const [contrast, setContrast] = useState(1);
   const [smooth, setSmooth] = useState(0);
   const [clean, setClean] = useState(0.5);
   const [detail, setDetail] = useState(0.35);
@@ -96,10 +97,26 @@ export default function App() {
   const [note, setNote] = useState("");
   const [over, setOver] = useState(false);
   const [cutPass, setCutPass] = useState(0);
-  const [raw, setRaw] = useState<{ height: Float32Array; depth: Float32Array | null; cols: number; rows: number } | null>(null);
+  // depth: undefined = not estimated yet (turned legs don't need it), null = model unavailable.
+  const [raw, setRaw] = useState<{
+    height: Float32Array;
+    alpha: Float32Array | null;
+    depth: Float32Array | null | undefined;
+    cols: number;
+    rows: number;
+    invert: boolean;
+  } | null>(null);
+  const lastImg = useRef<HTMLImageElement | null>(null);
+  const [cutBg, setCutBg] = useState(true);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
   const [wireframe, setWireframe] = useState(false);
   const [showBase, setShowBase] = useState(true);
+  const [piece, setPiece] = useState<Piece>("panel");
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  const [legDia, setLegDia] = useState(50);
+  const [turned, setTurned] = useState(true);
+  const turnedOn = piece === "leg" && turned;
+  const sizedFor = useRef("");
   const [view, setView] = useState<{ kind: "fit" | "front" | "top" | "side" | "persp"; n: number }>({ kind: "persp", n: 0 });
   const [warn, setWarn] = useState<{ mb: number; tris: number } | null>(null);
   const goView = (kind: "fit" | "front" | "top" | "side" | "persp") => setView((v) => ({ kind, n: v.n + 1 }));
@@ -132,11 +149,27 @@ export default function App() {
     const next = await rasterFromImage(img, cols, invert);
     const iw = img.naturalWidth || img.width;
     const ih = img.naturalHeight || img.height;
-    let dep = await estimateDepth(img, iw, ih, next.cols, next.rows, (s) => setBusy(s));
-    if (dep && invert) dep = dep.map((v) => 1 - v);
-    if (!dep) setNote("Depth model unavailable: relief uses picture brightness only.");
+    let kind = piece;
+    if (sizedFor.current !== src) {
+      // New picture: work out what kind of piece it is and keep its proportions.
+      sizedFor.current = src;
+      kind = detectPiece(iw, ih);
+      setPiece(kind);
+      setImgSize({ w: iw, h: ih });
+      setBoard((b) => ({ ...b, ...boardForPiece(kind, iw, ih) }));
+    }
+    lastImg.current = img;
+    // A turned leg takes its shape from the outline, so the depth model is skipped
+    // (it is estimated later only if the user switches turned mode off).
+    const needDepth = !(kind === "leg" && turned);
+    let dep: Float32Array | null | undefined;
+    if (needDepth) {
+      dep = await estimateDepth(img, iw, ih, next.cols, next.rows, (s) => setBusy(s));
+      if (dep && invert) dep = dep.map((v) => 1 - v);
+      if (!dep) setNote("Depth model unavailable: relief uses picture brightness only.");
+    }
     setBusy("Building 3D relief");
-    setRaw({ height: next.height, depth: dep, cols: next.cols, rows: next.rows });
+    setRaw({ height: next.height, alpha: next.alpha, depth: dep, cols: next.cols, rows: next.rows, invert });
     setCutPass((n) => n + 1);
     setView((v) => ({ kind: "persp", n: v.n + 1 }));
     setBusy("Preparing preview");
@@ -160,16 +193,50 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [contrast, smooth, normalize, clean, detail]);
 
-  const refined = useMemo(
-    () =>
-      raw
-        ? applyContrast(
-            composeRelief({ luma: raw.height, depth: raw.depth, cols: raw.cols, rows: raw.rows }, { smooth: fieldOpts.smooth, clean: fieldOpts.clean, detail: fieldOpts.detail }),
-            fieldOpts.contrast,
-          )
-        : null,
-    [raw, fieldOpts],
+  const refined = useMemo(() => {
+    if (!raw) return null;
+    const h = composeRelief(
+      { luma: raw.height, alpha: raw.alpha, depth: raw.depth ?? null, cols: raw.cols, rows: raw.rows },
+      {
+        smooth: fieldOpts.smooth,
+        clean: fieldOpts.clean,
+        detail: fieldOpts.detail,
+        turned: turnedOn,
+        cutBackground: cutBg ? "auto" : false,
+      },
+    );
+    // A turned leg keeps its background at exactly 0, so contrast is not applied to it.
+    return turnedOn ? h : applyContrast(h, fieldOpts.contrast);
+  }, [raw, fieldOpts, turnedOn, cutBg]);
+
+  // Turned mode switched off (or piece changed) on a picture whose depth was skipped: estimate it now.
+  useEffect(() => {
+    if (!raw || raw.depth !== undefined || turnedOn || !lastImg.current) return;
+    let live = true;
+    const img = lastImg.current;
+    const r = raw;
+    void (async () => {
+      setBusy("Generating depth");
+      let dep = await estimateDepth(img, img.naturalWidth || img.width, img.naturalHeight || img.height, r.cols, r.rows, (s) => setBusy(s));
+      if (dep && r.invert) dep = dep.map((v) => 1 - v);
+      if (!dep) setNote("Depth model unavailable: relief uses picture brightness only.");
+      if (live) setRaw((cur) => (cur === r ? { ...r, depth: dep ?? null } : cur));
+      setBusy("");
+    })();
+    return () => {
+      live = false;
+    };
+  }, [raw, turnedOn]);
+
+  // Turned mode needs the leg's outline: warn when the background is too busy to find it.
+  const legOutlineMissing = useMemo(
+    () => !!raw && turnedOn && !silhouette(raw.height, raw.cols, raw.rows, raw.alpha),
+    [raw, turnedOn],
   );
+  useEffect(() => {
+    if (legOutlineMissing)
+      setNote("Couldn't find the leg's outline. Use a plain or transparent background, or switch Turned off.");
+  }, [legOutlineMissing]);
 
   const [meshBoard, setMeshBoard] = useState(board);
   useEffect(() => {
@@ -274,6 +341,9 @@ export default function App() {
 
   function clearPic() {
     if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
+    sizedFor.current = "";
+    setImgSize(null);
+    setPiece("panel");
     setPic("");
     setRaw(null);
     setFileMeta(null);
@@ -396,6 +466,23 @@ export default function App() {
     }
   }
 
+  /** Width and height stay in the picture's proportions, so a design is never squashed. */
+  function setSide(key: "widthMm" | "heightMm", rawVal: string) {
+    const n = Number(rawVal);
+    if (!Number.isFinite(n) || n <= 0) return;
+    if (!imgSize) return setNum(key, rawVal);
+    const r = imgSize.h / imgSize.w;
+    const round = (v: number) => Math.max(1, Math.round(v * 2) / 2);
+    setBoard((b) =>
+      key === "widthMm" ? { ...b, widthMm: n, heightMm: round(n * r) } : { ...b, heightMm: n, widthMm: round(n / r) },
+    );
+  }
+
+  function choosePiece(p: Piece) {
+    setPiece(p);
+    if (imgSize) setBoard((b) => ({ ...b, ...boardForPiece(p, imgSize.w, imgSize.h) }));
+  }
+
   function setNum(key: keyof typeof board, rawVal: string) {
     const n = Number(rawVal);
     if (!Number.isFinite(n) || n < 0 || (n === 0 && key !== "baseMm")) return;
@@ -415,7 +502,7 @@ export default function App() {
   function newProject() {
     clearPic();
     setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
-    setContrast(1.15);
+    setContrast(1);
     setClean(0.5);
     setDetail(0.35);
     setSmooth(0);
@@ -679,6 +766,53 @@ export default function App() {
 
         <aside className="rail">
           <div className="card">
+            <h3>Piece</h3>
+            <div className="seg" role="group" aria-label="Kind of piece">
+              {PIECES.map((p) => (
+                <button key={p.id} type="button" aria-pressed={piece === p.id} onClick={() => choosePiece(p.id)}>
+                  <strong>{p.label}</strong>
+                  <span>{p.hint}</span>
+                </button>
+              ))}
+            </div>
+            <small>
+              {imgSize ? "Picked from the picture's shape. " : ""}Size follows the picture's proportions: {board.widthMm} × {board.heightMm} mm.
+            </small>
+            {piece === "leg" ? (
+              <label className="toggle">
+                <input type="checkbox" checked={turned} onChange={(e) => setTurned(e.target.checked)} />
+                Turned (round) leg: shape from the outline, background cut to 0
+              </label>
+            ) : null}
+            {piece === "leg" ? (
+              <label className="field">
+                <span>
+                  Rotary leg diameter <em className="nums">{legDia}&nbsp;mm</em>
+                </span>
+                <div className="pair">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={1}
+                    value={legDia}
+                    onChange={(e) => {
+                      const d = Number(e.target.value);
+                      if (Number.isFinite(d) && d > 0) setLegDia(d);
+                    }}
+                  />
+                  <button type="button" className="btn ghost" onClick={() => setSide("widthMm", String(circumferenceMm(legDia)))}>
+                    Wrap once around
+                  </button>
+                </div>
+                <small>
+                  Carving flat? Ignore this. For a rotary / 4th-axis machine, this sets the width to π × diameter
+                  ({circumferenceMm(legDia)} mm) so ArtCAM or Aspire can wrap the relief around the leg.
+                </small>
+              </label>
+            ) : null}
+          </div>
+
+          <div className="card">
             <h3>Relief</h3>
             <div className="seg" role="group" aria-label="Relief depth">
               {RELIEF.map((r) => (
@@ -700,6 +834,10 @@ export default function App() {
             <label className="toggle">
               <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
               Invert light and dark
+            </label>
+            <label className="toggle">
+              <input type="checkbox" checked={cutBg} onChange={(e) => setCutBg(e.target.checked)} />
+              Cut plain background to 0 (when the picture has one)
             </label>
           </div>
 
@@ -729,13 +867,13 @@ export default function App() {
                   <span>
                     Width <em className="nums">{board.widthMm}&nbsp;mm</em>
                   </span>
-                  <input type="number" inputMode="decimal" min={1} value={board.widthMm} onChange={(e) => setNum("widthMm", e.target.value)} />
+                  <input type="number" inputMode="decimal" min={1} value={board.widthMm} onChange={(e) => setSide("widthMm", e.target.value)} />
                 </label>
                 <label className="field">
                   <span>
                     Height <em className="nums">{board.heightMm}&nbsp;mm</em>
                   </span>
-                  <input type="number" inputMode="decimal" min={1} value={board.heightMm} onChange={(e) => setNum("heightMm", e.target.value)} />
+                  <input type="number" inputMode="decimal" min={1} value={board.heightMm} onChange={(e) => setSide("heightMm", e.target.value)} />
                 </label>
               </div>
               <label className="field">
@@ -903,8 +1041,12 @@ export default function App() {
                 type="button"
                 className="btn ghost full"
                 onClick={() => {
-                  setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
-                  setContrast(1.15);
+                  setBoard({
+                    ...(imgSize ? boardForPiece(piece, imgSize.w, imgSize.h) : { widthMm: 100, heightMm: 100 }),
+                    depthMm: 3,
+                    baseMm: 0,
+                  });
+                  setContrast(1);
                   setClean(0.5);
                   setDetail(0.35);
                   setSmooth(0);

@@ -1,4 +1,5 @@
 import { normalizeHeight, resampleHeight } from "./height.ts";
+import { mergeTiles, planTiles } from "./tiles.ts";
 
 /**
  * Monocular depth in the browser (Depth Anything V2 Small, ~27–50 MB, cached by the
@@ -55,26 +56,37 @@ export async function estimateDepth(
       });
     }
     const pipe = await pipePromise;
-    onStatus?.("Estimating depth");
-
-    const k = INPUT_LONG_SIDE / Math.max(srcW, srcH, 1);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(8, Math.round(srcW * k));
-    canvas.height = Math.max(8, Math.round(srcH * k));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
-
     const { RawImage } = await import("@huggingface/transformers");
-    const out = await pipe(RawImage.fromCanvas(canvas));
-    const t = out.predicted_depth;
-    const h = t.dims[t.dims.length - 2]!;
-    const w = t.dims[t.dims.length - 1]!;
-    const data = Float32Array.from(t.data);
-    if (data.length < w * h || !data.every(Number.isFinite)) return null;
-    return normalizeHeight(resampleHeight(data, w, h, cols, rows));
+
+    // Long pictures (legs, border strips) are cut into overlapping near-square tiles,
+    // because the model shrinks every input to ~518 px on its long side.
+    const tiles = planTiles(cols, rows);
+    const sx = srcW / cols;
+    const sy = srcH / rows;
+    const parts: Float32Array[] = [];
+    for (let k = 0; k < tiles.length; k++) {
+      const t = tiles[k]!;
+      onStatus?.(tiles.length > 1 ? `Estimating depth ${k + 1}/${tiles.length}` : "Estimating depth");
+      const tw = t.w * sx;
+      const th = t.h * sy;
+      const scale = INPUT_LONG_SIDE / Math.max(tw, th, 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(8, Math.round(tw * scale));
+      canvas.height = Math.max(8, Math.round(th * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(src, t.x * sx, t.y * sy, tw, th, 0, 0, canvas.width, canvas.height);
+      const out = await pipe(RawImage.fromCanvas(canvas));
+      const d = out.predicted_depth;
+      const h = d.dims[d.dims.length - 2]!;
+      const w = d.dims[d.dims.length - 1]!;
+      const data = Float32Array.from(d.data);
+      if (data.length < w * h || !data.every(Number.isFinite)) return null;
+      parts.push(resampleHeight(data, w, h, t.w, t.h));
+    }
+    return normalizeHeight(tiles.length === 1 ? parts[0]! : mergeTiles(tiles, parts, cols, rows));
   } catch (e) {
     console.warn("carve: depth model unavailable, using picture brightness", e);
     return null;

@@ -13,6 +13,19 @@ export function pixelsToHeight(data: Uint8ClampedArray, invert: boolean): Float3
   return out;
 }
 
+/** Opacity 0..1 per pixel, or null if every pixel is (nearly) opaque. */
+export function alphaOf(data: Uint8ClampedArray): Float32Array | null {
+  const n = data.length / 4;
+  let clear = 0;
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = data[i * 4 + 3]! / 255;
+    out[i] = a;
+    if (a < 0.5) clear++;
+  }
+  return clear > n * 0.01 ? out : null;
+}
+
 /** Stretch the height field so the darkest pixel is 0 and the lightest is 1. LinuxCNC image-to-gcode "Normalize". */
 export function normalizeHeight(h: Float32Array): Float32Array {
   let lo = Infinity;
@@ -148,6 +161,8 @@ export async function rasterFromImage(
   rows?: number,
 ): Promise<{
   height: Float32Array;
+  /** 0..1 opacity per cell, or null when the picture has no transparency. */
+  alpha: Float32Array | null;
   cols: number;
   rows: number;
 }> {
@@ -163,5 +178,5 @@ export async function rasterFromImage(
   ctx.imageSmoothingQuality = "high";
   drawSampled(ctx, src, w, h0, fit.cols, fit.rows);
   const { data } = ctx.getImageData(0, 0, fit.cols, fit.rows);
-  return { height: pixelsToHeight(data, invert), cols: fit.cols, rows: fit.rows };
+  return { height: pixelsToHeight(data, invert), alpha: alphaOf(data), cols: fit.cols, rows: fit.rows };
 }

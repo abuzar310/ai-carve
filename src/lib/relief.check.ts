@@ -1,4 +1,4 @@
-import { closeField, composeRelief, gaussianBlur, guidedFilter, limitSlope, removeTexture } from "./relief.ts";
+import { backgroundMask, closeField, composeRelief, gaussianBlur, guidedFilter, limitSlope, removeTexture, silhouette, turnedForm } from "./relief.ts";
 
 let n = 0;
 const ok = (cond: boolean, msg: string) => {
@@ -65,5 +65,74 @@ for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
 }
 const snapped = guidedFilter(guide, soft, N, N, 4, 1e-3);
 ok(snapped[32 * N + 33]! - snapped[32 * N + 30]! > soft[32 * N + 33]! - soft[32 * N + 30]!, "depth edge sharpened by guide");
+
+// Turned leg: bright spindle on black. Background must be 0, rows must be half-rounds,
+// and a wide bulb must stand taller than a thin neck.
+{
+  const C = 40;
+  const R = 120;
+  const leg = new Float32Array(C * R);
+  // Curved bulb (rows 31..59) on a thin neck, like a real turned leg.
+  const half = (y: number) => (y > 30 && y < 60 ? 6 + 10 * Math.sin(((y - 30) / 30) * Math.PI) : 6);
+  for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) if (Math.abs(x - 19.5) < half(y)) leg[y * C + x] = 0.7;
+  const m = silhouette(leg, C, R);
+  ok(!!m && m[45 * C + 20] === 1 && m[45 * C + 1] === 0, "silhouette finds the leg, not the background");
+  const t = composeRelief({ luma: leg, depth: null, cols: C, rows: R }, { turned: true });
+  ok(t[45 * C + 1] === 0 && t[90 * C + 2] === 0, "background is exactly 0");
+  ok(t[45 * C + 20]! > t[45 * C + 10]! && t[45 * C + 10]! > t[45 * C + 5]!, "bulb row falls off like a half-round");
+  ok(t[45 * C + 20]! > t[90 * C + 20]! + 0.3, "bulb stands taller than the neck");
+}
+
+// Square pedestal: widest straight-sided run gets a flat face, bulbs stay round.
+{
+  const C = 40;
+  const R = 160;
+  const m = new Uint8Array(C * R);
+  const half = (y: number) => (y < 40 ? 18 : y > 60 && y < 90 ? 14 : 7);
+  for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) if (Math.abs(x - 19.5) < half(y)) m[y * C + x] = 1;
+  const f = turnedForm(m, C, R);
+  const blockFlat = Math.abs(f[20 * C + 20]! - f[20 * C + 12]!) < 0.02;
+  const bulbRound = f[75 * C + 20]! - f[75 * C + 12]! > 0.08;
+  ok(blockFlat, "square block has a flat face");
+  ok(bulbRound, "bulb stays round");
+  ok(f[20 * C + 2]! > 0 && f[20 * C + 2]! < f[20 * C + 20]!, "block edge is chamfered");
+}
+
+// Background: busy border → nothing cut; flat black border → subject found; alpha wins.
+{
+  const C = 64;
+  const busy = new Float32Array(C * C);
+  let sd = 11;
+  const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < busy.length; i++) busy[i] = rnd();
+  ok(backgroundMask(busy, C, C) === null, "busy picture: no background cut");
+  const obj = new Float32Array(C * C);
+  for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) if (Math.hypot(x - 32, y - 32) < 18) obj[y * C + x] = 0.6 + 0.3 * Math.sin(x); // dark stripes inside
+  const bm = backgroundMask(obj, C, C);
+  ok(!!bm && bm[32 * C + 32] === 1 && bm[2 * C + 2] === 0, "object on black: found");
+  let holes = 0;
+  for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) if (Math.hypot(x - 32, y - 32) < 15 && bm && !bm[y * C + x]) holes++;
+  ok(holes === 0, "dark detail inside the object is not background");
+  const alpha = new Float32Array(C * C);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = i % C < 32 ? 1 : 0;
+  const am = backgroundMask(busy, C, C, alpha);
+  ok(!!am && am[10 * C + 5] === 1 && am[10 * C + 50] === 0, "transparent PNG uses alpha");
+  const h = composeRelief({ luma: obj, depth: null, cols: C, rows: C });
+  ok(h[2 * C + 2] === 0 && h[32 * C + 32]! > 0.1, "auto cut: background 0, subject raised");
+  const keep = composeRelief({ luma: obj, depth: null, cols: C, rows: C }, { cutBackground: false });
+  ok(keep.every((v) => v >= 0 && v <= 1), "cut off still valid");
+}
+
+// Degenerate pictures must not crash or produce NaN.
+{
+  const C = 32;
+  for (const v of [0, 0.5, 1]) {
+    const flatPic = new Float32Array(C * C).fill(v);
+    const h = composeRelief({ luma: flatPic, depth: null, cols: C, rows: C });
+    ok(h.every(Number.isFinite), `flat ${v} picture is finite`);
+    const t = composeRelief({ luma: flatPic, depth: null, cols: C, rows: C }, { turned: true });
+    ok(t.every(Number.isFinite), `flat ${v} picture in turned mode is finite`);
+  }
+}
 
 console.log(`carve relief.check OK (${n} assertions)`);
