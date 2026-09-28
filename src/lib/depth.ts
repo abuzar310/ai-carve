@@ -1,43 +1,71 @@
 import { normalizeHeight, resampleHeight } from "./height.ts";
 import { mergeTiles, planTiles } from "./tiles.ts";
+import { chooseDepthModel, GENERAL_MODEL_ID, LOCAL_MODEL_PATH, RELIEF_MODEL_ID, reliefModelAvailable, type DepthChoice } from "./depthModel.ts";
 
 /**
- * Monocular depth in the browser (Depth Anything V2 Small, ~27–50 MB, cached by the
- * browser after the first run). Output is 0..1 with NEAR = 1, which is exactly
- * relief height. Returns null if the model can't load, so the app still works.
+ * Monocular depth in the browser. Output is 0..1 with NEAR = 1, which is exactly relief height.
+ * Uses AI Carve's relief-trained model when it is deployed in public/models/, otherwise the stock
+ * Depth Anything V2 Small (~27–50 MB, cached by the browser after the first run).
+ * Returns null if no model can load, so the app still works.
  */
 
-const MODEL = "onnx-community/depth-anything-v2-small";
 const INPUT_LONG_SIDE = 518; // the model's native size; bigger input only costs time
 
 type DepthPipe = (img: unknown) => Promise<{ predicted_depth: { data: ArrayLike<number>; dims: number[] } }>;
 let pipePromise: Promise<DepthPipe> | null = null;
 
-async function loadPipe(onStatus?: (s: string) => void): Promise<DepthPipe> {
+/** Which model the current session ended up using (for the UI / debugging). */
+export let activeDepthModel: DepthChoice | null = null;
+
+async function loadModel(choice: DepthChoice, onStatus?: (s: string) => void): Promise<DepthPipe> {
   const tf = await import("@huggingface/transformers");
-  tf.env.allowLocalModels = false;
+  const relief = choice === "relief";
+  tf.env.allowLocalModels = relief;
+  tf.env.allowRemoteModels = !relief;
+  if (relief) tf.env.localModelPath = LOCAL_MODEL_PATH;
+  const id = relief ? RELIEF_MODEL_ID : GENERAL_MODEL_ID;
+  const label = relief ? "relief model" : "depth model";
   const progress = (p: { status?: string; progress?: number }) => {
     if (p.status === "progress" && typeof p.progress === "number") {
-      onStatus?.(`Downloading depth model ${Math.round(p.progress)}%`);
+      onStatus?.(`Downloading ${label} ${Math.round(p.progress)}%`);
     }
   };
   const hasGpu = typeof navigator !== "undefined" && "gpu" in navigator;
   if (hasGpu) {
     try {
-      return (await tf.pipeline("depth-estimation", MODEL, {
+      return (await tf.pipeline("depth-estimation", id, {
         device: "webgpu",
         dtype: "fp16",
         progress_callback: progress,
       })) as unknown as DepthPipe;
     } catch (e) {
-      console.warn("carve: WebGPU depth failed, falling back to WASM", e);
+      console.warn(`carve: WebGPU ${label} failed, falling back to WASM`, e);
     }
   }
-  return (await tf.pipeline("depth-estimation", MODEL, {
+  return (await tf.pipeline("depth-estimation", id, {
     device: "wasm",
     dtype: "q8",
     progress_callback: progress,
   })) as unknown as DepthPipe;
+}
+
+async function loadPipe(onStatus?: (s: string) => void): Promise<DepthPipe> {
+  const search = typeof location !== "undefined" ? location.search : "";
+  const available = typeof fetch !== "undefined" && (await reliefModelAvailable(fetch));
+  const choice = chooseDepthModel(search, available);
+  if (choice === "relief") {
+    try {
+      const pipe = await loadModel("relief", onStatus);
+      activeDepthModel = "relief";
+      console.info(`carve: using ${RELIEF_MODEL_ID}`);
+      return pipe;
+    } catch (e) {
+      console.warn("carve: relief model failed to load, using the general depth model", e);
+    }
+  }
+  const pipe = await loadModel("general", onStatus);
+  activeDepthModel = "general";
+  return pipe;
 }
 
 export async function estimateDepth(
