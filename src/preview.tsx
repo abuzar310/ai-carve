@@ -74,6 +74,8 @@ export function ReliefPreview({
       el.classList.add("ph");
       el.textContent = "3D preview unavailable. This browser stopped WebGL on this model. You can still download the STL.";
     });
+    renderer.domElement.setAttribute("role", "img");
+    renderer.domElement.setAttribute("aria-label", "3D preview of the relief. Drag to turn it, or use the view buttons below the preview.");
     el.appendChild(renderer.domElement);
 
     scene.add(new THREE.AmbientLight(0x4a453c, 0.08));

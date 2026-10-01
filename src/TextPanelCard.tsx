@@ -38,6 +38,13 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => {
     void smartSearchEnabled().then(setAi);
+    // start fetching the library now, so it is usually ready before the first search
+    const idle = (window as Window & { requestIdleCallback?: (f: () => void) => number }).requestIdleCallback ?? ((f: () => void) => window.setTimeout(f, 300));
+    idle(() => {
+      void loadQuran().catch(() => {});
+      void loadFont("naskh").catch(() => {});
+      void loadFont("quran").catch(() => {});
+    });
   }, []);
   const latestQ = useRef(q);
   latestQ.current = q;
@@ -110,7 +117,7 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
         <small id="find-hint">Type how it sounds in English, type it in Arabic, or give a name like Ar-Rahman, a surah name or a reference like 2:255.</small>
       </label>
       <div aria-live="polite">
-        {state === "loading" ? <small>Loading the Quran library…</small> : null}
+        {state === "loading" ? <small>Loading the Quran library (about 0.5&nbsp;MB, once)…</small> : null}
         {state === "searching" ? <small>Searching…</small> : null}
         {state === "error" ? <small className="err">{msg}</small> : null}
         {hits && !state && hits[0]?.kind === "note" ? <small>{hits[0].label}</small> : null}

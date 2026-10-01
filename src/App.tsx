@@ -120,6 +120,7 @@ export default function App() {
   /** The settings the current 3D relief was built from: downloads use these, not unbuilt edits. */
   const [builtSpec, setBuiltSpec] = useState<PanelSpec | null>(null);
   const [letterMm, setLetterMm] = useState(0);
+  const [flatPic, setFlatPic] = useState(false);
   const lastImg = useRef<HTMLImageElement | null>(null);
   const [cutBg, setCutBg] = useState(true);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
@@ -133,6 +134,20 @@ export default function App() {
   const sizedFor = useRef("");
   const [view, setView] = useState<{ kind: "fit" | "front" | "top" | "side" | "persp"; n: number }>({ kind: "persp", n: 0 });
   const [warn, setWarn] = useState<{ mb: number; tris: number } | null>(null);
+  const warnFirst = useRef<HTMLButtonElement>(null);
+  const warnFrom = useRef<HTMLElement | null>(null);
+  const closeWarn = () => {
+    setWarn(null);
+    warnFrom.current?.focus();
+  };
+  useEffect(() => {
+    if (!warn) return;
+    warnFrom.current = document.activeElement as HTMLElement | null;
+    warnFirst.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeWarn();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [warn]);
   const goView = (kind: "fit" | "front" | "top" | "side" | "persp") => setView((v) => ({ kind, n: v.n + 1 }));
   const depth = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -173,6 +188,18 @@ export default function App() {
       setBoard((b) => ({ ...b, ...boardForPiece(kind, iw, ih) }));
     }
     lastImg.current = img;
+    {
+      // a picture that is nearly one colour carves as a nearly flat board
+      const h = next.height;
+      let sum = 0;
+      let sq = 0;
+      for (let i = 0; i < h.length; i++) {
+        sum += h[i] ?? 0;
+        sq += (h[i] ?? 0) ** 2;
+      }
+      const mean = sum / h.length;
+      setFlatPic(Math.sqrt(Math.max(0, sq / h.length - mean * mean)) < 0.02);
+    }
     // A turned leg takes its shape from the outline, so the depth model is skipped
     // (it is estimated later only if the user switches turned mode off).
     const needDepth = !(kind === "leg" && turned);
@@ -361,6 +388,7 @@ export default function App() {
     setPiece("panel");
     setPic("");
     setRaw(null);
+    setFlatPic(false);
     setFileMeta(null);
     setWarn(null);
     setErr("");
@@ -765,6 +793,11 @@ export default function App() {
                   {fileMeta?.size ? bytes(fileMeta.size) : ""}
                   {fileMeta?.w ? `${fileMeta.size ? " · " : ""}${fileMeta.w} × ${fileMeta.h} px` : ""}
                 </p>
+                {flatPic ? (
+                  <p className="meta warn" role="note">
+                    This picture is almost one flat colour, so the relief will be nearly flat. Use a picture with clear light and dark areas.
+                  </p>
+                ) : null}
                 {fileMeta?.w && Math.max(fileMeta.w, fileMeta.h) < 500 ? (
                   <p className="meta warn" role="note">
                     Small picture, so the carving will look soft. Use one at least 800&nbsp;px wide for sharp detail.
@@ -1446,27 +1479,40 @@ export default function App() {
       ) : null}
 
       {warn ? (
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="warn-title">
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="warn-title" aria-describedby="warn-body" onKeyDown={(e) => e.key === "Escape" && closeWarn()}>
           <div className="card">
             <h2 id="warn-title">Large STL</h2>
-            <p>
+            <p id="warn-body">
               This file is about {nf1.format(warn.mb)}&nbsp;MB ({nf.format(warn.tris)} triangles). The preview is this same relief. Phones can struggle to save it.
             </p>
             <div className="actions" style={{ marginTop: 12 }}>
-              <button type="button" className="btn pri full" onClick={() => void saveStl()}>
+              <button ref={warnFirst} type="button" className="btn pri full" onClick={() => void saveStl()}>
                 Download anyway
               </button>
-              <button
-                type="button"
-                className="btn ghost full"
-                onClick={() => {
-                  setWarn(null);
-                  setQuality("high");
-                }}
-              >
-                Use High instead
-              </button>
-              <button type="button" className="btn ghost full" onClick={() => setWarn(null)}>
+              {raw?.exact ? (
+                <button
+                  type="button"
+                  className="btn ghost full"
+                  onClick={() => {
+                    closeWarn();
+                    void saveTextRelief("rlf");
+                  }}
+                >
+                  Get the .rlf instead (smaller, opens in ArtCAM)
+                </button>
+              ) : quality !== "standard" ? (
+                <button
+                  type="button"
+                  className="btn ghost full"
+                  onClick={() => {
+                    closeWarn();
+                    startTransition(() => setQuality(quality === "ultra" ? "high" : "standard"));
+                  }}
+                >
+                  {quality === "ultra" ? "Use High instead" : "Use Standard (about ¼ the size)"}
+                </button>
+              ) : null}
+              <button type="button" className="btn ghost full" onClick={closeWarn}>
                 Cancel
               </button>
             </div>
