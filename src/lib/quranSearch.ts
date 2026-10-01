@@ -19,7 +19,8 @@ export type Hit = {
   label: string;
   /** 0..1 similarity of the sound skeletons */
   score: number;
-  kind: "quran" | "name" | "phrase" | "surah";
+  /** "note": not a result — a message such as "The Quran has 114 surahs." in `label` */
+  kind: "quran" | "name" | "phrase" | "surah" | "note";
   /** picked by the AI assistant (the Arabic is still copied from the library) */
   ai?: boolean;
 };
@@ -152,6 +153,25 @@ export function forFont(t: string): string {
 /** Pause and ayah-end marks: kept in full ayahs, dropped from a few picked-out words. */
 const PAUSE = /[\u06d6-\u06dc\u06de\u06e9]/g;
 
+// ---------------------------------------------------------------- Arabic-script queries
+
+/** Arabic letters only, no vowel or Quranic marks, one form of alif / ya / ta marbuta; word-final ي optional. */
+export function arabicKey(t: string): string {
+  return t
+    .replace(/[\u064b-\u065f\u0670\u06d6-\u06ed\u0640\u08f0-\u08f2]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/[^\u0621-\u064a\s]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w.length >= 3 ? w.replace(/ي$/, "") : w))
+    .join(" ");
+}
+const HAS_ARABIC = /[\u0600-\u06ff]/;
+
 // ---------------------------------------------------------------- search
 
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
@@ -165,22 +185,28 @@ function ayahText(index: QuranIndex, s: number, a: number): string | null {
 /** Exact Arabic for a reference like "2:255", "112:1-4", "surah ikhlas", "ayatul kursi". */
 export function byReference(index: QuranIndex | null, q: string): Hit[] {
   const out: Hit[] = [];
-  const m = q.trim().match(/^(\d{1,3})\s*[:.]\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?$/);
+  const latin = q.trim().replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x6f0)).replace(/[٫:؛]/g, ":");
+  const m = latin.match(/^(\d{1,3})\s*[:.]\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?$/);
+  const note = (label: string): Hit[] => [{ arabic: "", source: "", label, score: 0, kind: "note" }];
   if (m && index) {
     const s = Number(m[1]);
     const a = Number(m[2]);
     const b = Math.max(a, Number(m[3] ?? a));
+    if (s < 1 || s > index.s.length) return note(`The Quran has ${index.s.length} surahs, so there is no surah ${s}.`);
+    const count = index.s[s - 1]![3].length;
+    if (a < 1) return note("Ayah numbers start at 1.");
+    if (a > count) return note(`Surah ${s} has ${count} ayahs.`);
     const parts: string[] = [];
     for (let k = a; k <= b; k++) {
       const t = ayahText(index, s, k);
       if (t) parts.push(b > a ? `${t} ﴿${arNum(k)}﴾` : t);
     }
-    if (parts.length) out.push({ arabic: forFont(parts.join(" ")), source: `Quran ${s}:${a}${b > a ? "-" + b : ""}`, label: q.trim(), score: 1, kind: "quran" });
+    if (parts.length) out.push({ arabic: forFont(parts.join(" ")), source: `Quran ${s}:${a}${b > a ? "-" + Math.min(b, count) : ""}`, label: q.trim(), score: 1, kind: "quran" });
   }
   return out;
 }
 
-type Prepared = { full: string; fullV: string; sk: string[]; sv: string[]; arW: string[]; trW: string[] }[][];
+type Prepared = { full: string; fullV: string; sk: string[]; sv: string[]; arW: string[]; trW: string[]; arK: string[] }[][];
 const prepared = new WeakMap<QuranIndex, Prepared>();
 /** Skeletons and sound forms of every ayah, worked out once per loaded library. */
 function prepare(index: QuranIndex): Prepared {
@@ -189,7 +215,8 @@ function prepare(index: QuranIndex): Prepared {
     p = index.s.map(([, , , ayahs]) =>
       ayahs.map(([ar, tr]) => {
         const trW = tr.split(/\s+/);
-        return { full: trSkeleton(tr), fullV: trSound(tr), sk: trW.map((w) => skeleton(trWord(w))), sv: trW.map((w) => sound(trWord(w))), arW: ar.split(/\s+/), trW };
+        const arW = ar.split(/\s+/);
+        return { full: trSkeleton(tr), fullV: trSound(tr), sk: trW.map((w) => skeleton(trWord(w))), sv: trW.map((w) => sound(trWord(w))), arW, trW, arK: arW.map(arabicKey) };
       }),
     );
     prepared.set(index, p);
@@ -202,6 +229,7 @@ export function search(index: QuranIndex | null, query: string, limit = 6, minSc
   if (!q) return [];
   const refs = byReference(index, q);
   if (refs.length) return refs;
+  if (HAS_ARABIC.test(q)) return searchArabic(index, q, limit);
   const qs = skeleton(q);
   const qv = sound(q);
   if (qs.length < 2) return [];
@@ -285,7 +313,7 @@ export function search(index: QuranIndex | null, query: string, limit = 6, minSc
   }
   return out;
 }
-const order = (h: Hit) => ({ name: 0, phrase: 1, surah: 2, quran: 3 })[h.kind];
+const order = (h: Hit) => ({ name: 0, phrase: 1, surah: 2, quran: 3, note: 4 })[h.kind];
 
 /** A match this close is treated as the intended text (the UI still shows it for confirmation). */
 export const SURE = 0.95;
@@ -296,4 +324,55 @@ export function applyHit(spec: PanelSpec, hit: Hit, target: "line" | "header"): 
   if (target === "header") return { ...spec, header: hit.arabic };
   if (spec.template === "names99") return spec;
   return { ...spec, lines: [...spec.lines.filter((l) => l.trim()), hit.arabic], font: quranFont ? "quran" : spec.font };
+}
+
+/** Query typed in Arabic: compare letters (marks ignored) with the names, phrases and every run of Quran words. */
+function searchArabic(index: QuranIndex | null, query: string, limit: number): Hit[] {
+  const qk = arabicKey(query);
+  if (qk.replace(/\s/g, "").length < 2) return [];
+  const words = qk.split(" ").length;
+  const hits: Hit[] = [];
+  NAMES_99.forEach((n, i) => {
+    const sc = similarity(qk, arabicKey(n));
+    if (sc >= 0.75) hits.push({ arabic: n, source: "99 Names", label: NAMES_99_EN[i] ?? "", score: sc, kind: "name" });
+  });
+  for (const p of PHRASES) {
+    const sc = similarity(qk, arabicKey(p.ar));
+    if (sc >= 0.75) hits.push({ arabic: p.ar, source: "Phrase", label: p.en[0] ?? "", score: sc, kind: "phrase" });
+  }
+  if (index) {
+    const prep = prepare(index);
+    index.s.forEach(([n], si) => {
+      prep[si]!.forEach((P, ai) => {
+        let best = { sc: 0, i: 0, j: 0 };
+        for (let i = 0; i < P.arK.length; i++) {
+          for (let len = Math.max(1, words - 1); len <= words + 1 && i + len <= P.arK.length; len++) {
+            const sc = similarity(qk, P.arK.slice(i, i + len).join(" "));
+            if (sc > best.sc) best = { sc, i, j: i + len - 1 };
+          }
+        }
+        if (best.sc >= 0.8) {
+          const whole = best.i === 0 && best.j === P.arW.length - 1;
+          hits.push({
+            arabic: forFont(P.arW.slice(best.i, best.j + 1).join(" ").replace(whole ? /$^/ : PAUSE, "").trim()),
+            source: whole ? `Quran ${n}:${ai + 1}` : `Quran ${n}:${ai + 1} (word${best.j > best.i ? "s" : ""} ${best.i + 1}${best.j > best.i ? "–" + (best.j + 1) : ""})`,
+            label: P.trW.slice(best.i, best.j + 1).join(" "),
+            score: best.sc,
+            kind: "quran",
+          });
+        }
+      });
+    });
+  }
+  hits.sort((a, b) => b.score - a.score || order(a) - order(b));
+  const seen = new Set<string>();
+  const out: Hit[] = [];
+  for (const h of hits) {
+    const key = arabicKey(h.arabic);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(h);
+    if (out.length >= limit) break;
+  }
+  return out;
 }

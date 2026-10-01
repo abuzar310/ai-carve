@@ -447,3 +447,8 @@ details.adv summary { list-style: none } details.gen summary { list-style: none 
 @media (hover: hover) { .seg button:hover:not([aria-pressed="true"]) { border-color: var(--brass) } }
 .drop .linkish { color: #e0a764 }
 .skip { min-height: 44px; display: inline-flex; align-items: center }
+.seg.two { grid-template-columns: 1fr 1fr }
+.mode-card { padding: 10px }
+.letter-size { margin: 0; font-size: 13px; color: var(--ink) }
+.letter-size.warn { color: var(--err); background: var(--err-bg); padding: 8px 10px; border-radius: var(--r-sm) }
+.source .meta.warn { color: var(--err); margin-top: 4px }

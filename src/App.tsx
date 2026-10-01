@@ -117,6 +117,7 @@ export default function App() {
   } | null>(null);
   const [mode, setMode] = useState<"photo" | "text">("photo");
   const [textSpec, setTextSpec] = useState<PanelSpec>(DEFAULT_SPEC);
+  const [letterMm, setLetterMm] = useState(0);
   const lastImg = useRef<HTMLImageElement | null>(null);
   const [cutBg, setCutBg] = useState(true);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
@@ -177,7 +178,7 @@ export default function App() {
     if (needDepth) {
       dep = await estimateDepth(img, iw, ih, next.cols, next.rows, (s) => setBusy(s));
       if (dep && invert) dep = dep.map((v) => 1 - v);
-      if (!dep) setNote("Depth model unavailable: relief uses picture brightness only.");
+      if (!dep) setNote((n) => (n ? n + " " : "") + "Depth model unavailable: relief uses picture brightness only.");
     }
     setBusy("Building 3D relief");
     setRaw({ height: next.height, alpha: next.alpha, depth: dep, cols: next.cols, rows: next.rows, invert });
@@ -506,6 +507,7 @@ export default function App() {
   }
 
   function exportSource() {
+    if (raw?.exact) return textSpec.template === "names99" ? "99-names-panel" : "text-panel";
     const n = fileMeta?.name || "";
     if (n && !/^generated image$/i.test(n)) return n;
     return prompt;
@@ -514,6 +516,8 @@ export default function App() {
   function newProject() {
     clearPic();
     setMode("photo");
+    setTextSpec(DEFAULT_SPEC);
+    setLetterMm(0);
     setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
     setContrast(1);
     setClean(0.5);
@@ -524,13 +528,26 @@ export default function App() {
     setQuality("high");
   }
 
+  /** Photo relief ↔ text panel. The other mode's 3D result is cleared; a loaded photo is kept for coming back. */
+  const photoBoard = useRef<typeof board | null>(null);
+  function switchMode(m: "photo" | "text") {
+    if (m === mode) return;
+    setErr("");
+    if (m === "text") photoBoard.current = board;
+    else if (photoBoard.current) setBoard(photoBoard.current);
+    setMode(m);
+    if (raw && (m === "photo") === !!raw.exact) setRaw(null);
+  }
+
   /** Typeset the panel and build the exact relief at `longSide` samples on the long edge. */
   async function textField(longSide: number) {
     const lay = layoutPanel(textSpec);
     const { cols, rows } = gridFor(textSpec.widthMm, textSpec.heightMm, longSide);
-    const { masks } = await rasterPanel(lay, cols, rows);
+    const { masks, ops } = await rasterPanel(lay, cols, rows);
     const out = composePanel(lay, masks, cols, rows, textSpec.style, textSpec.letterMm);
-    return { ...out, cols, rows };
+    const sizes = ops.filter((o) => o.role === "text").map((o) => o.sizeMm).sort((a, b) => a - b);
+    const letterMm = sizes.length ? sizes[Math.floor(sizes.length / 2)]! : 0;
+    return { ...out, cols, rows, letterMm };
   }
 
   async function buildText() {
@@ -541,18 +558,14 @@ export default function App() {
       await tick();
       const words = textSpec.template === "names99" ? 1 : textSpec.lines.filter((l) => l.trim()).length;
       if (!words) throw new Error("Type some text first.");
+      for (const [k, v] of [["Width", textSpec.widthMm], ["Height", textSpec.heightMm]] as const)
+        if (!(v >= 30 && v <= 3000)) throw new Error(`${k} must be between 30 and 3000 mm.`);
       const f = await textField(mobile ? 1024 : QUALITY.ultra.field);
       setBusy("Building 3D relief");
       await tick();
-      if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
-      setPic("");
-      lastImg.current = null;
-      sizedFor.current = "text";
-      setImgSize(null);
-      setPiece("panel");
-      setFileMeta({ name: textSpec.template === "names99" ? "99-names-panel" : "text-panel", size: 0, w: f.cols, h: f.rows });
       setBoard({ widthMm: textSpec.widthMm, heightMm: textSpec.heightMm, depthMm: f.depthMm, baseMm: 0 });
       setRaw({ height: f.h, alpha: null, depth: null, cols: f.cols, rows: f.rows, invert: false, exact: true });
+      setLetterMm(f.letterMm);
       setCutPass((n) => n + 1);
       setView((v) => ({ kind: "persp", n: v.n + 1 }));
       setBusy("Preparing preview");
@@ -692,8 +705,8 @@ export default function App() {
         <b className={step === "export" ? "now" : ""}>Export</b>
       </nav>
 
-      <main id="workspace" className={"work" + (pic ? " has-source" : "")}>
-        {pic ? (
+      <main id="workspace" className={"work" + (pic && mode === "photo" ? " has-source" : "")}>
+        {pic && mode === "photo" ? (
           <aside className="source card" aria-label="Source image">
             <h2>Source image</h2>
             <figure>
@@ -704,6 +717,11 @@ export default function App() {
                   {fileMeta?.size ? bytes(fileMeta.size) : ""}
                   {fileMeta?.w ? `${fileMeta.size ? " · " : ""}${fileMeta.w} × ${fileMeta.h} px` : ""}
                 </p>
+                {fileMeta?.w && Math.max(fileMeta.w, fileMeta.h) < 500 ? (
+                  <p className="meta warn" role="note">
+                    Small picture, so the carving will look soft. Use one at least 800&nbsp;px wide for sharp detail.
+                  </p>
+                ) : null}
               </figcaption>
             </figure>
             <div className="actions two">
@@ -743,7 +761,7 @@ export default function App() {
               </button>
             </div>
           </div>
-        ) : pic && !ready && !busy ? (
+        ) : pic && mode === "photo" && !ready && !busy ? (
           <p className="result">Ready to generate your relief.</p>
         ) : null}
         <section
@@ -766,7 +784,7 @@ export default function App() {
             <Suspense fallback={<div className="gl ph">Loading 3D preview…</div>}>
               <ReliefPreview key={cutPass} source={meshRef} rev={rev} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
             </Suspense>
-          ) : pic ? (
+          ) : pic && mode === "photo" ? (
             <div className="drop">
               <div>
                 <h2>{err ? "Unable to process this image" : "Ready to generate your relief"}</h2>
@@ -791,7 +809,7 @@ export default function App() {
                       Build text panel
                     </button>
                     <p className="hint">
-                      <button type="button" className="linkish" onClick={() => setMode("photo")}>
+                      <button type="button" className="linkish" onClick={() => switchMode("photo")}>
                         Back to photo relief
                       </button>
                     </p>
@@ -804,7 +822,7 @@ export default function App() {
                       <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
                         Upload image
                       </button>
-                      <button type="button" className="btn on-dark" onClick={() => setMode("text")} disabled={!!busy}>
+                      <button type="button" className="btn on-dark" onClick={() => switchMode("text")} disabled={!!busy}>
                         Make a text panel
                       </button>
                     </div>
@@ -883,12 +901,25 @@ export default function App() {
         </div>
 
         <aside className="rail">
+          <div className="card mode-card">
+            <div className="seg two" role="group" aria-label="What to make">
+              <button type="button" aria-pressed={mode === "photo"} onClick={() => switchMode("photo")} disabled={!!busy}>
+                <strong>Photo relief</strong>
+                <span>From a picture</span>
+              </button>
+              <button type="button" aria-pressed={mode === "text"} onClick={() => switchMode("text")} disabled={!!busy}>
+                <strong>Text panel</strong>
+                <span>Names, verses, plates</span>
+              </button>
+            </div>
+          </div>
           {mode === "text" ? (
             <TextPanelCard
               spec={textSpec}
               setSpec={setTextSpec}
               busy={!!busy}
               built={!!raw?.exact}
+              letterMm={raw?.exact ? letterMm : 0}
               onBuild={() => void buildText()}
             />
           ) : null}

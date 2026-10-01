@@ -27,6 +27,7 @@ ok(r.length === 3, `1 candidate + 2 valid refs (${r.length})`);
 ok(r[0]!.arabic === cands[1]!.arabic && r[0]!.ai === true && r[0]!.source.startsWith("AI pick"), "candidate 1 comes back with its library Arabic, marked AI");
 ok(r.some((h) => h.source.includes("2:153")) && r.some((h) => h.source.includes("112:1-4")), "valid references are looked up in the library");
 ok(!r.some((h) => h.source.includes("999") || h.source.includes("9999")), "made-up references are dropped");
+ok(r.every((h) => h.kind !== "note" && h.arabic.length > 0), "explanations for bad references never become results");
 r = parseAiReply('```json\n{"ids":[0],"refs":[]}\n```', cands, index);
 ok(r.length === 1 && r[0]!.arabic === "العفو", "accepts a reply wrapped in a code fence");
 ok(parseAiReply("Sure! The answer is بصير", cands, index).length === 0, "free text (even Arabic) is ignored");

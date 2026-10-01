@@ -55,7 +55,7 @@ export function parseAiReply(text: string, candidates: readonly Candidate[], ind
   }
   for (const ref of Array.isArray(data.refs) ? data.refs.slice(0, 5) : []) {
     if (typeof ref !== "string" || !REF.test(ref)) continue;
-    for (const h of byReference(index, ref.trim())) add({ ...h, source: `AI pick · ${h.source}`, ai: true });
+    for (const h of byReference(index, ref.trim())) if (h.kind !== "note") add({ ...h, source: `AI pick · ${h.source}`, ai: true });
   }
   return out;
 }

@@ -70,6 +70,22 @@ r = top("36:58");
 ok(!/[\u0656\u0657\u065e]/.test(r[0]!.arabic), "36:58 has no KFGQPC tanween code points");
 ok(r[0]!.arabic.includes("\u08f1") && r[0]!.arabic.includes("\u08f0") && r[0]!.arabic.includes("\u08f2"), "36:58 uses open dammatan, fathatan and kasratan");
 for (const h of search(index, "baseer")) ok(!/[\u0656\u0657\u065e]/.test(h.arabic), "word results are mapped too");
+// references with Arabic-Indic digits, and helpful notes for impossible ones (written before the code)
+r = top("١١٢:١");
+ok(r.length === 1 && r[0]!.source === "Quran 112:1", "Arabic-Indic digits work as a reference");
+r = top("999:1");
+ok(r.length === 1 && r[0]!.kind === "note" && /114/.test(r[0]!.label), "surah 999 explains the Quran has 114 surahs");
+r = top("2:0");
+ok(r.length === 1 && r[0]!.kind === "note" && /start at 1/i.test(r[0]!.label), "ayah 0 explains numbering starts at 1");
+r = top("112:9");
+ok(r.length === 1 && r[0]!.kind === "note" && /4 ayahs/.test(r[0]!.label), "112:9 explains Surah 112 has 4 ayahs");
+// typing in Arabic finds the library text (vowel marks ignored)
+r = top("الرحمن");
+ok(r[0]!.arabic === "الرحمن" && r[0]!.score === 1, "Arabic query finds the 99 Names entry");
+r = top("ربي زدني علما");
+ok(r.some((h) => h.source.startsWith("Quran 20:114") && h.score >= SURE), `Arabic words find 20:114 (${r[0]?.source})`);
+r = top("لا تحزن ان الله معنا");
+ok(r.some((h) => h.source.startsWith("Quran 9:40") && h.score >= SURE), `Arabic without hamza still finds 9:40 (${r[0]?.source})`);
 r = top("xyzzy qwrtp");
 ok(r.every((h) => h.score < SURE), "nonsense never counts as a sure match");
 ok(search(index, "") .length === 0, "empty query → nothing");

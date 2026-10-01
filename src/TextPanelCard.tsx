@@ -103,27 +103,28 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
           spellCheck={false}
           aria-describedby="find-hint"
         />
-        <small id="find-hint">Type how it sounds in English, a name like Ar-Rahman, a surah name, or a reference like 2:255.</small>
+        <small id="find-hint">Type how it sounds in English, type it in Arabic, or give a name like Ar-Rahman, a surah name or a reference like 2:255.</small>
       </label>
       <div aria-live="polite">
         {state === "loading" ? <small>Loading the Quran library…</small> : null}
         {state === "searching" ? <small>Searching…</small> : null}
         {state === "error" ? <small className="err">{msg}</small> : null}
-        {hits && !state && !hits.length && !aiHits?.length ? <small>No close match. Try another spelling, or a reference like 112:1.</small> : null}
+        {hits && !state && hits[0]?.kind === "note" ? <small>{hits[0].label}</small> : null}
+      {hits && !state && !hits.length && !aiHits?.length ? <small>No close match. Try another spelling, or a reference like 112:1.</small> : null}
       </div>
-      {ai && hits && !state && !hits.some((h) => h.score >= SURE) ? (
+      {ai && hits && !state && hits[0]?.kind !== "note" && !hits.some((h) => h.score >= SURE) ? (
         <button type="button" className="btn ghost smart" disabled={aiBusy} onClick={() => void smart()}>
           {aiBusy ? "Asking AI…" : "Smart search with AI"}
         </button>
       ) : null}
       {msg && state !== "error" ? <small aria-live="polite">{msg}</small> : null}
-      {hits && hits.length && hits.every((h) => h.score < SURE) && !aiHits?.length ? (
+      {hits && hits.length && hits[0]?.kind !== "note" && hits.every((h) => h.score < SURE) && !aiHits?.length ? (
         <p className="no-sure" role="note">
           No exact match. The library has the Quran, the 99 Names and common phrases — personal names aren’t in it yet. The
           results below only sound similar; don’t use them unless one is what you meant.
         </p>
       ) : null}
-      {(aiHits?.length ? aiHits : hits)?.length ? (
+      {(aiHits?.length ? aiHits : hits)?.length && hits?.[0]?.kind !== "note" ? (
         <ul className="hits">
           {(aiHits?.length ? aiHits : hits ?? []).map((h, i) => (
             <li key={i} className={h.ai ? "ai" : h.score >= SURE ? "sure" : ""}>
@@ -176,10 +177,12 @@ type Props = {
   setSpec: (f: (s: PanelSpec) => PanelSpec) => void;
   busy: boolean;
   built: boolean;
+  /** median letter height of the built panel (0 = not built) */
+  letterMm: number;
   onBuild: () => void;
 };
 
-export function TextPanelCard({ spec, setSpec, busy, built, onBuild }: Props) {
+export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild }: Props) {
   const set = <K extends keyof PanelSpec>(k: K, v: PanelSpec[K]) => setSpec((s) => ({ ...s, [k]: v }));
   const num = (k: "widthMm" | "heightMm" | "columns", raw: string) => {
     const v = Number(raw);
@@ -277,7 +280,7 @@ export function TextPanelCard({ spec, setSpec, busy, built, onBuild }: Props) {
 
       <label className="field">
         <span>
-          {spec.style === "vcarve" ? "Carve depth" : "Letter height"} <em className="nums">{spec.letterMm.toFixed(1)}&nbsp;mm</em>
+          {spec.style === "vcarve" ? "Carve depth" : "Letters raised by"} <em className="nums">{spec.letterMm.toFixed(1)}&nbsp;mm</em>
         </span>
         <input type="range" min={0.6} max={4} step={0.1} value={spec.letterMm} onChange={(e) => set("letterMm", Number(e.target.value))} />
       </label>
@@ -287,6 +290,12 @@ export function TextPanelCard({ spec, setSpec, busy, built, onBuild }: Props) {
         Moulded frame
       </label>
 
+      {letterMm > 0 ? (
+        <p className={"letter-size" + (letterMm < 6 ? " warn" : "")} role="status">
+          Letters about <b className="nums">{letterMm < 10 ? letterMm.toFixed(1) : Math.round(letterMm)}&nbsp;mm</b> tall
+          {letterMm < 6 ? " — too small to carve cleanly. Make the panel bigger or use fewer words." : "."}
+        </p>
+      ) : null}
       <button type="button" className="btn pri" disabled={busy} onClick={onBuild}>
         {built ? "Rebuild text panel" : "Build text panel"}
       </button>
