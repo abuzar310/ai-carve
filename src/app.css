@@ -455,3 +455,5 @@ details.adv summary { list-style: none } details.gen summary { list-style: none 
 .field-err { color: var(--err); font-size: 13px; line-height: 1.4 }
 input[aria-invalid="true"] { border-color: var(--err); box-shadow: 0 0 0 1px var(--err) inset }
 .stale-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: #fbefd9; color: #6b4a14; font-size: 13px; line-height: 1.4 }
+.font-hint { margin: 0; font-size: 13px; color: var(--ink) }
+.font-hint .linkish { min-height: 0; display: inline }

@@ -575,7 +575,7 @@ export default function App() {
     const { cols, rows } = gridFor(spec.widthMm, spec.heightMm, longSide);
     const { masks, ops } = await rasterPanel(lay, cols, rows);
     const out = composePanel(lay, masks, cols, rows, spec.style, spec.letterMm);
-    const sizes = ops.filter((o) => o.role === "text").map((o) => o.sizeMm).sort((a, b) => a - b);
+    const sizes = ops.filter((o) => o.role === "text").map((o) => o.inkMm ?? o.sizeMm * 0.75).sort((a, b) => a - b);
     const letterMm = sizes.length ? sizes[Math.floor(sizes.length / 2)]! : 0;
     return { ...out, cols, rows, letterMm };
   }
@@ -661,15 +661,16 @@ export default function App() {
       await tick();
       const long = Math.min(4096, Math.round(Math.max(spec.widthMm, spec.heightMm) / 0.25));
       const f = await textField(long, spec);
-      const stem = artcamNames(exportSource(), spec.widthMm, spec.heightMm, f.depthMm, 0).bmp.replace(/\.bmp$/, "");
+      const depth = board.depthMm; // same depth as the preview and the STL, so every file name agrees
+      const stem = artcamNames(exportSource(), spec.widthMm, spec.heightMm, depth, 0).bmp.replace(/\.bmp$/, "");
       if (kind === "rlf") {
-        const bytes = reliefRlf(f.h, f.cols, f.rows, spec.widthMm, spec.heightMm, f.depthMm);
+        const bytes = reliefRlf(f.h, f.cols, f.rows, spec.widthMm, spec.heightMm, depth);
         await saveFile(`${stem}.rlf`, new Blob([bytes as BlobPart], { type: "application/octet-stream" }), "application/octet-stream");
-        setNote(`ArtCAM relief downloaded · ${f.cols} × ${f.rows} · ${f.depthMm} mm`);
+        setNote(`ArtCAM relief downloaded · ${f.cols} × ${f.rows} · ${depth} mm`);
       } else {
         const bytes = reliefTif(f.h, f.cols, f.rows, spec.widthMm, spec.heightMm);
         await saveFile(`${stem}.tif`, new Blob([bytes as BlobPart], { type: "image/tiff" }), "image/tiff");
-        setNote(`16-bit TIFF downloaded · set the relief height to ${f.depthMm} mm in ArtCAM`);
+        setNote(`16-bit TIFF downloaded · set the relief height to ${depth} mm in ArtCAM`);
       }
     } catch (e) {
       setErr(sayErr(e));
@@ -682,8 +683,9 @@ export default function App() {
     setErr("");
     try {
       setBusy("Typesetting");
-      const blob = await proofPng(layoutPanel(builtSpec ?? textSpec));
-      await saveFile(`${textSpec.template === "names99" ? "99-names" : "text-panel"}-proof.png`, blob, "image/png");
+      const ps = builtSpec ?? textSpec;
+      const blob = await proofPng(layoutPanel(ps));
+      await saveFile(`${ps.template === "names99" ? "99-names-panel" : "text-panel"}-${ps.widthMm}x${ps.heightMm}-proof.png`, blob, "image/png");
       setNote("Proof image downloaded. Check every word before carving.");
     } catch (e) {
       setErr(sayErr(e));
@@ -1420,8 +1422,8 @@ export default function App() {
       <footer className="foot">
         <div className="foot-brand">
           <p className="kicker">AI Carve</p>
-          <p className="foot-line">Image → 3D relief → STL</p>
-          <p>Turn a picture into a solid carving file for ArtCAM.</p>
+          <p className="foot-line">Photo or text → 3D relief → STL / .rlf</p>
+          <p>Turn a picture, a name or a verse into a carving file for ArtCAM and other CNC software.</p>
         </div>
         <div>
           <h2>Product</h2>
@@ -1445,19 +1447,19 @@ export default function App() {
         </div>
         <div className="foot-copy" id="how">
           <h2>How it works</h2>
-          <p>Upload an image. Light areas rise, dark areas sink. Choose detail and relief, then download an STL for ArtCAM Import 3D Model.</p>
+          <p>Photo relief: upload a picture. Light areas rise, dark areas sink; choose detail and depth, then download the STL. Text panel: pick 99 Names, a name plate or a word grid, type or search the Arabic (Find Arabic), build, then download the STL, the ArtCAM .rlf or a 16-bit TIFF.</p>
         </div>
         <div className="foot-copy" id="help-copy">
           <h2>Help</h2>
-          <p>Keep invert off for normal carvings; turn it on only to cut the design into the wood like an engraving. Ultra makes a large file on a sharp photo. Height BMP is only needed if ArtCAM asks to open an image.</p>
+          <p>Photos: keep invert off for normal carvings; turn it on only to cut the design into the wood like an engraving. Use a sharp picture at least 800 px wide. Text panels: the card shows how tall the letters will be — keep them above 6 mm. Download the proof image and have someone who reads the script check it before carving. In ArtCAM, the .rlf opens as a ready relief.</p>
         </div>
         <div className="foot-copy" id="formats">
           <h2>Supported formats</h2>
-          <p>Upload JPG, PNG, WebP, or BMP. Export binary STL for Import 3D Model, plus an optional 8-bit height BMP.</p>
+          <p>Upload JPG, PNG, WebP, or BMP. Export binary STL for Import 3D Model and an optional 8-bit height BMP; text panels also give an ArtCAM relief (.rlf) and a 16-bit TIFF at 0.25 mm, plus a proof PNG.</p>
         </div>
         <div className="foot-copy" id="privacy">
           <h2>Privacy</h2>
-          <p>Pictures stay in this browser. Carve does not write them to a shop database.</p>
+          <p>Pictures and the 3D work stay in this browser; Carve does not upload them. Two optional features send text to outside services: Smart search sends only the English words you type to Google Gemini, and “Describe a design” sends your description to an image service.</p>
         </div>
       </footer>
 

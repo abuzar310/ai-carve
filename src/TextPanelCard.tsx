@@ -276,6 +276,14 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         </label>
       ) : null}
 
+      {spec.font === "naskh" && spec.template !== "names99" && /[\u0671\u06d6-\u06dc\u06e1]/.test(spec.lines.join(" ")) ? (
+        <p className="font-hint" role="note">
+          This looks like Quran text. Its marks show best in the Quran script.{" "}
+          <button type="button" className="linkish" onClick={() => set("font", "quran")}>
+            Use Quran script
+          </button>
+        </p>
+      ) : null}
       <label className="field">
         <span>Font</span>
         <select name="panel-font" value={spec.font} onChange={(e) => set("font", e.target.value as FontId)}>

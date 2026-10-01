@@ -111,6 +111,13 @@ export async function rasterPanel(layout: Layout, cols: number, rows: number): P
     return ctx.measureText(t).width / pxmm;
   };
   const ops = fitText(layout.items, measure);
+  for (const o of ops) {
+    ctx.font = fontCss(o.font, o.sizeMm * pxmm);
+    // height of a tall letter (alif / capital H) at this size: marks stacked above the letters don't count
+    const m = ctx.measureText(/[\u0600-\u06ff]/.test(o.text) ? "ا" : "H");
+    const ink = (m.actualBoundingBoxAscent ?? 0) + (m.actualBoundingBoxDescent ?? 0);
+    if (ink > 0) o.inkMm = ink / pxmm;
+  }
   const pass = (draw: () => void) => {
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = "#fff";

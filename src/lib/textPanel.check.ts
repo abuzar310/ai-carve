@@ -1,4 +1,5 @@
 import {
+  quranMarks,
   sizeProblem,
   switchTemplate,
   BISMILLAH,
@@ -146,4 +147,30 @@ ok(/width/i.test(sizeProblem({ ...DEFAULT_SPEC, widthMm: 5000 }) ?? ""), "5000 m
 ok(/height/i.test(sizeProblem({ ...DEFAULT_SPEC, heightMm: 10 }) ?? ""), "10 mm tall is refused, naming the height");
 ok(/30.*3000/.test(sizeProblem({ ...DEFAULT_SPEC, widthMm: 20 }) ?? ""), "the message gives the allowed range");
 ok(sizeProblem({ ...DEFAULT_SPEC, widthMm: 30, heightMm: 3000 }) === null, "the limits themselves are allowed");
+// ---- pasted Quran text (written before quranMarks / plate wrapping existed)
+{
+  const uthmani = "سِنَةٞ وَلَا نَوۡمٞۚ قَوۡلٗا مِّن رَّبّٖ ٱللَّهُ";
+  const u = quranMarks(uthmani);
+  ok(!/[\u0656\u0657\u065e]/.test(u) && /\u08f0/.test(u) && /\u08f1/.test(u) && /\u08f2/.test(u), "Uthmani paste: open tanween mapped to U+08F0/1/2");
+  const indopak = "لَهٗ مَا فِی السَّمٰوٰتِ";
+  ok(quranMarks(indopak) === indopak, "Indo-Pak text (ulta pesh U+0657, no Uthmani marks) is left exactly as typed");
+  ok(quranMarks("سَلَٰمٞ") === "سَلَٰم\u08f1", "U+065E is always open dammatan");
+  const pl = layoutPanel({ ...DEFAULT_SPEC, template: "plate", header: "", lines: [uthmani] });
+  ok(!/[\u0656\u0657\u065e]/.test(pl.items[0]!.text), "plate text goes through quranMarks");
+}
+{
+  const long = "aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp";
+  const lay = layoutPanel({ ...DEFAULT_SPEC, template: "plate", widthMm: 600, heightMm: 300, header: "", lines: [long] });
+  const m = (s: string, _f: string, z: number) => s.length * 0.55 * z;
+  const ops = fitText(lay.items, m);
+  const one = (lay.items[0]!.box.x1 - lay.items[0]!.box.x0) / (long.length * 0.55);
+  ok(ops.length >= 2, `a long plate line wraps onto ${ops.length} lines`);
+  ok(ops[0]!.sizeMm > one * 1.4, `wrapped text is much bigger than one squeezed line (${ops[0]!.sizeMm.toFixed(1)} vs ${one.toFixed(1)} mm)`);
+  ok(ops.every((o) => m(o.text, "", o.sizeMm) <= lay.items[0]!.box.x1 - lay.items[0]!.box.x0 + 1e-6), "every wrapped line fits the width");
+  ok(ops.map((o) => o.text).join(" ") === long, "wrapping keeps every word, in order");
+  const top = Math.min(...ops.map((o) => o.baseline - o.sizeMm)), bottom = Math.max(...ops.map((o) => o.baseline + o.sizeMm * 0.4));
+  ok(top >= lay.items[0]!.box.y0 - 1e-6 && bottom <= lay.items[0]!.box.y1 + 1e-6, "wrapped block stays inside its box");
+  const short = fitText(layoutPanel({ ...DEFAULT_SPEC, template: "plate", header: "", lines: ["بسم الله"] }).items, m);
+  ok(short.length === 1, "a short line stays on one line");
+}
 console.log(`carve textPanel.check OK (${n} assertions)`);

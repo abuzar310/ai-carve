@@ -89,6 +89,17 @@ export function sizeProblem(spec: PanelSpec): string | null {
   return null;
 }
 
+/**
+ * Pasted Uthmani Quran text (King Fahd Complex encoding) borrows U+0657 / U+0656 / U+065E for open
+ * fathatan / kasratan / dammatan; map them to the proper Unicode marks the fonts draw. Indo-Pak text uses
+ * U+0657 for "ulta pesh", so the first two are only mapped when the text is clearly Uthmani
+ * (alif wasla or the Uthmani sukun). U+065E is only ever open dammatan.
+ */
+export function quranMarks(t: string): string {
+  const u = t.replace(/\u065e/g, "\u08f1");
+  return /[\u0671\u06e1]/.test(u) ? u.replace(/\u0657/g, "\u08f0").replace(/\u0656/g, "\u08f2") : u;
+}
+
 export type TextItem = {
   text: string;
   font: FontId;
@@ -171,6 +182,7 @@ export function layoutPanel(spec: PanelSpec): Layout {
         allowSplit: false,
       });
     });
+    out.items = out.items.map((it) => ({ ...it, text: quranMarks(it.text) }));
     return out;
   }
 
@@ -214,6 +226,7 @@ export function layoutPanel(spec: PanelSpec): Layout {
       });
     }
   });
+  out.items = out.items.map((it) => ({ ...it, text: quranMarks(it.text) }));
   return out;
 }
 
@@ -221,7 +234,7 @@ export function layoutPanel(spec: PanelSpec): Layout {
 
 /** Width of `text` set at `sizeMm`, in mm. The browser measures with canvas; tests use a stand-in. */
 export type Measure = (text: string, font: FontId, sizeMm: number) => number;
-export type DrawOp = { text: string; font: FontId; cx: number; baseline: number; sizeMm: number; role: "header" | "text" };
+export type DrawOp = { text: string; font: FontId; cx: number; baseline: number; sizeMm: number; role: "header" | "text"; /** measured ink height (browser only) */ inkMm?: number };
 
 const LINE_CAP = 0.62; // single line: letter size ≤ 62 % of the box height
 const LINE_CAP_ARABIC = 0.8; // Arabic letters sit lower in the em than Latin capitals, so they may use more of it
@@ -250,6 +263,23 @@ export function fitText(items: readonly TextItem[], measure: Measure): DrawOp[] 
       let size = Math.min(base, capOf(it));
       while (size > base * 0.2 && !fits(measure, it, size)) size *= 0.97;
       const words = it.text.split(" ");
+      if (it.group.startsWith("plate") && words.length >= 4 && size < capOf(it) * 0.9) {
+        // sentences / ayahs squeezed by the width; short phrases and names keep their one row
+        // a long plate line: wrap onto the number of lines that gives the biggest letters
+        const LH = 1.5; // line pitch in em (room for Arabic marks above and below)
+        let best = { size, lines: [it.text] };
+        for (let k = 2; k <= Math.min(6, words.length); k++) {
+          const lines = balance(words, k);
+          let s2 = bh / (k * LH);
+          while (s2 > 0.5 && Math.max(...lines.map((l) => measure(l, it.font, s2))) > bw) s2 *= 0.97;
+          if (s2 > best.size * 1.05) best = { size: s2, lines };
+        }
+        if (best.lines.length > 1) {
+          const top = cy - (best.lines.length * LH * best.size) / 2;
+          best.lines.forEach((l, i) => ops.push({ text: l, font: it.font, cx, baseline: top + (i * LH + 1) * best.size, sizeMm: best.size, role: it.role }));
+          continue;
+        }
+      }
       if (it.allowSplit && words.length >= 2 && size < base * SPLIT_BELOW) {
         const mid = Math.ceil(words.length / 2);
         const l1 = words.slice(0, mid).join(" ");
@@ -264,6 +294,27 @@ export function fitText(items: readonly TextItem[], measure: Measure): DrawOp[] 
     }
   }
   return ops;
+}
+
+/** Split words into k lines of similar length (in characters), keeping their order. */
+function balance(words: readonly string[], k: number): string[] {
+  const total = words.reduce((a, w) => a + w.length + 1, -1);
+  const lines: string[] = [];
+  let cur: string[] = [];
+  let len = 0;
+  words.forEach((w, i) => {
+    const left = words.length - i;
+    const linesLeft = k - lines.length;
+    if (cur.length && (len + w.length + 1 > total / k * 1.08 || left < linesLeft) && lines.length < k - 1) {
+      lines.push(cur.join(" "));
+      cur = [];
+      len = 0;
+    }
+    cur.push(w);
+    len += w.length + (cur.length > 1 ? 1 : 0);
+  });
+  if (cur.length) lines.push(cur.join(" "));
+  return lines;
 }
 
 // ---------------------------------------------------------------- distance transform
