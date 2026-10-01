@@ -552,6 +552,49 @@ export default function App() {
     return { ...out, cols, rows, letterMm };
   }
 
+  /**
+   * After a build, bring the 3D result into view (on phones the settings sit below it).
+   * Polls the page instead of hooking React renders: the 3D preview re-renders an
+   * unpredictable number of times, and its mounting can cut a smooth scroll short.
+   */
+  function revealResult() {
+    const started = performance.now();
+    const inView = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return r.top >= -2 && r.top < window.innerHeight * 0.5;
+    };
+    // the moment the person scrolls or touches, stop: never fight the user
+    let userMoved = false;
+    const stop = () => (userMoved = true);
+    const opts = { passive: true, once: true } as const;
+    let glidedAt = 0;
+    const step = () => {
+      const now = performance.now();
+      if (userMoved || now - started > 8000) return cleanup();
+      const el = document.querySelector(".result-bar");
+      if (!el || document.querySelector(".veil")) return void window.setTimeout(step, 120);
+      if (!glidedAt) {
+        glidedAt = now;
+        window.addEventListener("wheel", stop, opts);
+        window.addEventListener("touchstart", stop, opts);
+        window.addEventListener("keydown", stop, opts);
+        // an instant jump: a smooth scroll needs animation frames, and a busy 3D preview can starve them
+        if (!inView(el)) el.scrollIntoView({ behavior: "auto", block: "start" });
+        return void window.setTimeout(step, 700);
+      }
+      // layout changes (3D canvas mounting, scroll anchoring) can pull the page away: settle it for ~2 s
+      if (!inView(el)) el.scrollIntoView({ behavior: "auto", block: "start" });
+      if (now - glidedAt < 2100) return void window.setTimeout(step, 350);
+      cleanup();
+    };
+    const cleanup = () => {
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("touchstart", stop);
+      window.removeEventListener("keydown", stop);
+    };
+    window.setTimeout(step, 120);
+  }
+
   async function buildText() {
     setErr("");
     setNote("");
@@ -568,6 +611,7 @@ export default function App() {
       setBoard({ widthMm: textSpec.widthMm, heightMm: textSpec.heightMm, depthMm: f.depthMm, baseMm: 0 });
       setRaw({ height: f.h, alpha: null, depth: null, cols: f.cols, rows: f.rows, invert: false, exact: true });
       setBuiltSpec(textSpec);
+      revealResult();
       setLetterMm(f.letterMm);
       setCutPass((n) => n + 1);
       setView((v) => ({ kind: "persp", n: v.n + 1 }));
