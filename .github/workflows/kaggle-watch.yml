@@ -1,0 +1,48 @@
+name: Kaggle relief watch
+
+# Every 20 minutes: is the Kaggle training done? If yes, fetch the results onto the
+# relief-model-results branch (never main), open an issue so the owner gets a notification,
+# and switch this watcher off.
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      KAGGLE_CI_LOG: ${{ github.workspace }}/../kaggle-status.txt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q "kaggle>=2.2"
+      - id: st
+        run: python training/kaggle_ci.py status
+      - if: steps.st.outputs.state == 'complete'
+        run: |
+          python training/kaggle_ci.py fetch || true
+          git config user.name "Claude (for abuzar310)"
+          git config user.email "noreply@anthropic.com"
+          git checkout -B relief-model-results
+          git add training/results public/models || true
+          git commit -m "Relief model results from Kaggle" || echo "nothing to commit"
+          git push -f origin relief-model-results
+          gh issue create --title "Relief model training finished" \
+            --body "$(printf 'Kaggle training is done. Results are on the relief-model-results branch (not live).\n\n%s\n\nGo back to the Claude chat and say: check' "$(cat "$KAGGLE_CI_LOG")")"
+          gh workflow disable kaggle-watch.yml
+      - if: steps.st.outputs.state == 'error'
+        run: |
+          gh issue create --title "Relief model training stopped with an error" \
+            --body "$(printf '%s\n\nGo back to the Claude chat and say: check' "$(cat "$KAGGLE_CI_LOG")")"
+          gh workflow disable kaggle-watch.yml

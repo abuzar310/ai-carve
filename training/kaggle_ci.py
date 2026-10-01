@@ -69,7 +69,13 @@ def main(action):
     if action == "status":
         s = api.kernels_status(ref)
         msg = getattr(s, "failure_message", "") or ""
-        note(f"Status of {ref}: {getattr(s, 'status', s)} {msg}".strip())
+        st = str(getattr(s, "status", s))
+        note(f"Status of {ref}: {st} {msg}".strip())
+        state = "complete" if "COMPLETE" in st.upper() else (
+            "error" if any(k in st.upper() for k in ("ERROR", "CANCEL")) else "running")
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write(f"state={state}\n")
         return
 
     if action == "fetch":
