@@ -20,6 +20,8 @@ export type Hit = {
   /** 0..1 similarity of the sound skeletons */
   score: number;
   kind: "quran" | "name" | "phrase" | "surah";
+  /** picked by the AI assistant (the Arabic is still copied from the library) */
+  ai?: boolean;
 };
 
 /** English spellings people use for the 99 Names (same order as NAMES_99). */
@@ -161,7 +163,7 @@ function ayahText(index: QuranIndex, s: number, a: number): string | null {
 }
 
 /** Exact Arabic for a reference like "2:255", "112:1-4", "surah ikhlas", "ayatul kursi". */
-function byReference(index: QuranIndex | null, q: string): Hit[] {
+export function byReference(index: QuranIndex | null, q: string): Hit[] {
   const out: Hit[] = [];
   const m = q.trim().match(/^(\d{1,3})\s*[:.]\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?$/);
   if (m && index) {
@@ -195,7 +197,7 @@ function prepare(index: QuranIndex): Prepared {
   return p;
 }
 
-export function search(index: QuranIndex | null, query: string, limit = 6): Hit[] {
+export function search(index: QuranIndex | null, query: string, limit = 6, minScore = 0.6): Hit[] {
   const q = query.trim();
   if (!q) return [];
   const refs = byReference(index, q);
@@ -205,7 +207,7 @@ export function search(index: QuranIndex | null, query: string, limit = 6): Hit[
   if (qs.length < 2) return [];
   const hits: Hit[] = [];
   const push = (h: Hit) => {
-    if (h.score >= 0.6) hits.push(h);
+    if (h.score >= minScore) hits.push(h);
   };
 
   NAMES_99_EN.forEach((en, i) => {

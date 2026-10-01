@@ -415,3 +415,5 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
 .find-arabic .credit { color: var(--mute); font-size: 11px }
 .find-arabic .err { color: #b3261e }
 .find-arabic .no-sure { margin: 0; padding: 8px 10px; border-radius: 8px; background: #fbefd9; color: #6b4a14; font-size: 13px; line-height: 1.45 }
+.find-arabic .smart { justify-self: start }
+.find-arabic .hits li.ai { border-color: #6a7fb5; box-shadow: inset 3px 0 0 #6a7fb5 }

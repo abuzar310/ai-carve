@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { FONTS, switchTemplate, type FontId, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
 import { SURE, applyHit, search, type Hit, type QuranIndex } from "./lib/quranSearch";
+import { parseAiReply, type Candidate } from "./lib/aiPick";
+
+let aiOn: Promise<boolean> | null = null;
+/** Is smart search set up on this site (GEMINI_API_KEY in Vercel)? */
+function smartSearchEnabled(): Promise<boolean> {
+  if (!aiOn)
+    aiOn = fetch("/api/find")
+      .then((r) => (r.ok ? (r.json() as Promise<{ enabled?: boolean }>) : { enabled: false }))
+      .then((d) => !!d.enabled)
+      .catch(() => false);
+  return aiOn;
+}
 import { loadFont } from "./lib/textRaster";
 
 let quranIndex: Promise<QuranIndex> | null = null;
@@ -20,7 +32,35 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [state, setState] = useState<"" | "loading" | "searching" | "error">("");
   const [msg, setMsg] = useState("");
+  const [ai, setAi] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiHits, setAiHits] = useState<Hit[] | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    void smartSearchEnabled().then(setAi);
+  }, []);
+  const smart = async () => {
+    setAiBusy(true);
+    setMsg("");
+    try {
+      const index = await loadQuran();
+      const cands: Candidate[] = search(index, q, 30, 0.45).map((h, id) => ({ id, label: h.label, source: h.source, arabic: h.arabic, kind: h.kind }));
+      const r = await fetch("/api/find", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ q, candidates: cands.map(({ id, label, source }) => ({ id, label, source })) }),
+      });
+      const data = (await r.json()) as { text?: string; error?: string };
+      if (!r.ok) throw new Error(data.error || "Smart search failed. Try again.");
+      const picks = parseAiReply(data.text ?? "", cands, index);
+      setAiHits(picks);
+      if (!picks.length) setMsg("Smart search found nothing in the library either.");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(false);
+    }
+  };
   const run = async (query: string) => {
     if (query.trim().length < 2) return setHits(null);
     try {
@@ -36,6 +76,7 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
     }
   };
   useEffect(() => {
+    setAiHits(null);
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void run(q), 450);
     return () => window.clearTimeout(timer.current);
@@ -68,23 +109,37 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
         {state === "loading" ? <small>Loading the Quran library…</small> : null}
         {state === "searching" ? <small>Searching…</small> : null}
         {state === "error" ? <small className="err">{msg}</small> : null}
-        {hits && !state && !hits.length ? <small>No close match. Try another spelling, or a reference like 112:1.</small> : null}
+        {hits && !state && !hits.length && !aiHits?.length ? <small>No close match. Try another spelling, or a reference like 112:1.</small> : null}
       </div>
-      {hits && hits.length && hits.every((h) => h.score < SURE) ? (
+      {ai && hits && !state && !hits.some((h) => h.score >= SURE) ? (
+        <button type="button" className="btn ghost smart" disabled={aiBusy} onClick={() => void smart()}>
+          {aiBusy ? "Asking AI…" : "Smart search with AI"}
+        </button>
+      ) : null}
+      {msg && state !== "error" ? <small aria-live="polite">{msg}</small> : null}
+      {hits && hits.length && hits.every((h) => h.score < SURE) && !aiHits?.length ? (
         <p className="no-sure" role="note">
           No exact match. The library has the Quran, the 99 Names and common phrases — personal names aren’t in it yet. The
           results below only sound similar; don’t use them unless one is what you meant.
         </p>
       ) : null}
-      {hits && hits.length ? (
+      {(aiHits?.length ? aiHits : hits)?.length ? (
         <ul className="hits">
-          {hits.map((h, i) => (
-            <li key={i} className={h.score >= SURE ? "sure" : ""}>
+          {(aiHits?.length ? aiHits : hits ?? []).map((h, i) => (
+            <li key={i} className={h.ai ? "ai" : h.score >= SURE ? "sure" : ""}>
               <p className="ar" lang="ar" dir="rtl" style={{ fontFamily: `"${FONTS[h.kind === "quran" || h.kind === "surah" ? "quran" : "naskh"].family}", serif` }}>
                 {h.arabic}
               </p>
               <p className="meta">
-                <b className="nums">{Math.round(h.score * 100)}%</b> {h.score >= SURE ? "match" : "close"} · {h.source}
+                {h.ai ? (
+                  <>
+                    <b>AI suggestion</b> · {h.source.replace(/^AI pick · /, "")} · check it before carving
+                  </>
+                ) : (
+                  <>
+                    <b className="nums">{Math.round(h.score * 100)}%</b> {h.score >= SURE ? "match" : "close"} · {h.source}
+                  </>
+                )}
               </p>
               <div className="hit-acts">
                 {lines ? (
