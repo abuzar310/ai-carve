@@ -1,0 +1,455 @@
+/**
+ * Text & panel reliefs — exact, typeset lettering. No depth guessing, so every
+ * dot, hamza and madda the font draws is carved exactly.
+ *
+ *   PanelSpec → layoutPanel → (browser) rasterPanel: fitText + canvas masks
+ *             → composePanel (heights in mm) → normalized field → buildRelief / RLF / TIFF
+ *
+ * Everything here is pure (no DOM), so it runs in `pnpm check`.
+ */
+import { gaussianBlur } from "./relief";
+
+export type LetterStyle = "raised" | "vcarve" | "flat";
+export type Template = "plate" | "names99" | "grid";
+export type FontId = "naskh" | "quran";
+export type Box = { x0: number; y0: number; x1: number; y1: number };
+
+export const FONTS: Record<FontId, { family: string; url: string; label: string }> = {
+  naskh: { family: "CarveAmiri", url: "/fonts/Amiri-Bold.ttf", label: "Naskh (Amiri)" },
+  quran: { family: "CarveAmiriQuran", url: "/fonts/AmiriQuran-Regular.ttf", label: "Quran script (Amiri Quran)" },
+};
+
+export const BISMILLAH = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ";
+
+/** الله followed by the 99 Names in the order narrated by al-Tirmidhi. */
+export const NAMES_99: readonly string[] = [
+  "الله",
+  "الرحمن", "الرحيم", "الملك", "القدوس", "السلام", "المؤمن", "المهيمن", "العزيز", "الجبار", "المتكبر",
+  "الخالق", "البارئ", "المصور", "الغفار", "القهار", "الوهاب", "الرزاق", "الفتاح", "العليم", "القابض",
+  "الباسط", "الخافض", "الرافع", "المعز", "المذل", "السميع", "البصير", "الحكم", "العدل", "اللطيف",
+  "الخبير", "الحليم", "العظيم", "الغفور", "الشكور", "العلي", "الكبير", "الحفيظ", "المقيت", "الحسيب",
+  "الجليل", "الكريم", "الرقيب", "المجيب", "الواسع", "الحكيم", "الودود", "المجيد", "الباعث", "الشهيد",
+  "الحق", "الوكيل", "القوي", "المتين", "الولي", "الحميد", "المحصي", "المبدئ", "المعيد", "المحيي",
+  "المميت", "الحي", "القيوم", "الواجد", "الماجد", "الواحد", "الأحد", "الصمد", "القادر", "المقتدر",
+  "المقدم", "المؤخر", "الأول", "الآخر", "الظاهر", "الباطن", "الوالي", "المتعالي", "البر", "التواب",
+  "المنتقم", "العفو", "الرؤوف", "مالك الملك", "ذو الجلال والإكرام", "المقسط", "الجامع", "الغني", "المغني", "المانع",
+  "الضار", "النافع", "النور", "الهادي", "البديع", "الباقي", "الوارث", "الرشيد", "الصبور",
+];
+
+/** Units per row for the 99 Names board: 7 rows of 11, then row 8 with "ذو الجلال والإكرام" twice as wide, then 13. */
+export const NAMES_99_ROWS: readonly (readonly number[])[] = [
+  ...Array.from({ length: 7 }, () => Array<number>(11).fill(1)),
+  [1, 1, 1, 1, 1, 1, 1, 1, 2, 1],
+  Array<number>(13).fill(1),
+];
+
+export type PanelSpec = {
+  template: Template;
+  widthMm: number;
+  heightMm: number;
+  /** plate: one entry per line · grid: one entry per tile · names99: ignored */
+  lines: string[];
+  /** Header text across the top ("" for none). names99 defaults to the Bismillah. */
+  header: string;
+  font: FontId;
+  style: LetterStyle;
+  /** Raised height (raised / flat) or V-carve depth of the lettering, mm. */
+  letterMm: number;
+  frame: boolean;
+  /** grid only */
+  columns: number;
+};
+
+export const DEFAULT_SPEC: PanelSpec = {
+  template: "names99",
+  widthMm: 600,
+  heightMm: 600,
+  lines: [],
+  header: BISMILLAH,
+  font: "naskh",
+  style: "raised",
+  letterMm: 1.8,
+  frame: true,
+  columns: 4,
+};
+
+export type TextItem = {
+  text: string;
+  font: FontId;
+  box: Box;
+  /** Items in a group share one letter size (the typical tile fits; long ones shrink alone). */
+  group: string;
+  role: "header" | "text";
+  allowSplit: boolean;
+};
+export type Star = { cx: number; cy: number; r: number };
+export type Layout = {
+  widthMm: number;
+  heightMm: number;
+  frameMm: number;
+  beads: Box[];
+  tiles: Box[];
+  items: TextItem[];
+  stars: Star[];
+};
+
+const inset = (b: Box, d: number): Box => ({ x0: b.x0 + d, y0: b.y0 + d, x1: b.x1 - d, y1: b.y1 - d });
+
+function headerParts(spec: PanelSpec, x0: number, x1: number, y0: number, h: number) {
+  const box: Box = { x0, y0, x1, y1: y0 + h };
+  const r = Math.min(h * 0.24, (x1 - x0) * 0.045);
+  const stars: Star[] = [
+    { cx: x0 + r * 1.9, cy: y0 + h / 2, r },
+    { cx: x1 - r * 1.9, cy: y0 + h / 2, r },
+  ];
+  const item: TextItem = {
+    text: spec.header,
+    font: "quran",
+    box: { x0: x0 + r * 4.2, y0: y0 + h * 0.08, x1: x1 - r * 4.2, y1: y0 + h * 0.92 },
+    group: "header",
+    role: "header",
+    allowSplit: false,
+  };
+  return { box, stars, item };
+}
+
+/** Rows of tiles right-to-left (Arabic reading order), each row split by its units. */
+function tileRows(rowsUnits: readonly (readonly number[])[], x0: number, x1: number, y0: number, y1: number): Box[][] {
+  const rh = (y1 - y0) / rowsUnits.length;
+  return rowsUnits.map((units, r) => {
+    const tot = units.reduce((a, b) => a + b, 0);
+    const cw = (x1 - x0) / tot;
+    let x = x1;
+    return units.map((u) => {
+      const b: Box = { x0: x - u * cw, y0: y0 + r * rh, x1: x, y1: y0 + (r + 1) * rh };
+      x -= u * cw;
+      return b;
+    });
+  });
+}
+
+export function layoutPanel(spec: PanelSpec): Layout {
+  const W = spec.widthMm;
+  const H = spec.heightMm;
+  const m = Math.min(W, H);
+  const frameMm = spec.frame ? +(0.043 * m).toFixed(2) : 0;
+  const pad = spec.frame ? 0.012 * m : 0.02 * m;
+  const inner: Box = { x0: frameMm + pad, y0: frameMm + pad, x1: W - frameMm - pad, y1: H - frameMm - pad };
+  const iw = inner.x1 - inner.x0;
+  const ih = inner.y1 - inner.y0;
+  const gap = Math.max(0.6, 0.0027 * m);
+  const out: Layout = { widthMm: W, heightMm: H, frameMm, beads: [], tiles: [], items: [], stars: [] };
+
+  if (spec.template === "plate") {
+    out.beads.push(inner);
+    const lines = spec.lines.map((s) => s.trim()).filter(Boolean);
+    const n = Math.max(1, lines.length);
+    const lh = ih / n;
+    lines.forEach((t, i) => {
+      out.items.push({
+        text: t,
+        font: spec.font,
+        box: inset({ x0: inner.x0, y0: inner.y0 + i * lh, x1: inner.x1, y1: inner.y0 + (i + 1) * lh }, Math.min(lh, iw) * 0.08),
+        group: `plate${i}`, // each line fills its own row (a name plate mixes sizes)
+        role: "text",
+        allowSplit: false,
+      });
+    });
+    return out;
+  }
+
+  const words = spec.template === "names99" ? [...NAMES_99] : spec.lines.map((s) => s.trim()).filter(Boolean);
+  const header = spec.template === "names99" && !spec.header.trim() ? BISMILLAH : spec.header.trim();
+  let gridTop = inner.y0;
+  if (header) {
+    const hh = 0.22 * ih;
+    const hp = headerParts({ ...spec, header }, inner.x0, inner.x1, inner.y0, hh);
+    out.beads.push(hp.box);
+    out.stars.push(...hp.stars);
+    out.items.push(hp.item);
+    gridTop = inner.y0 + hh + 0.013 * ih;
+  }
+  const gridBox: Box = { x0: inner.x0, y0: gridTop, x1: inner.x1, y1: inner.y1 };
+  out.beads.push(gridBox);
+
+  let units: readonly (readonly number[])[];
+  if (spec.template === "names99") units = NAMES_99_ROWS;
+  else {
+    const c = Math.max(1, Math.round(spec.columns));
+    const rows = Math.max(1, Math.ceil(words.length / c));
+    units = Array.from({ length: rows }, (_, r) => Array<number>(Math.min(c, words.length - r * c) || c).fill(1));
+  }
+  const rows = tileRows(units, gridBox.x0, gridBox.x1, gridBox.y0, gridBox.y1);
+  let k = 0;
+  rows.forEach((row, ri) => {
+    const small = spec.template === "names99" && ri === rows.length - 1;
+    for (const b of row) {
+      const tile = inset(b, gap);
+      out.tiles.push(tile);
+      const word = words[k++];
+      if (!word) continue;
+      out.items.push({
+        text: word,
+        font: spec.font,
+        box: inset(tile, Math.max(1, (tile.x1 - tile.x0) * 0.05)),
+        group: small ? "small" : "tile",
+        role: "text",
+        allowSplit: true,
+      });
+    }
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------- text fitting
+
+/** Width of `text` set at `sizeMm`, in mm. The browser measures with canvas; tests use a stand-in. */
+export type Measure = (text: string, font: FontId, sizeMm: number) => number;
+export type DrawOp = { text: string; font: FontId; cx: number; baseline: number; sizeMm: number; role: "header" | "text" };
+
+const LINE_CAP = 0.62; // single line: letter size ≤ 62 % of the box height
+const LINE_CAP_ARABIC = 0.8; // Arabic letters sit lower in the em than Latin capitals, so they may use more of it
+const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/;
+const capOf = (it: TextItem) => (it.box.y1 - it.box.y0) * (it.role === "text" && ARABIC.test(it.text) && !/[A-Za-z]/.test(it.text) ? LINE_CAP_ARABIC : LINE_CAP);
+const SPLIT_BELOW = 0.72; // a two-word name smaller than this × the group size goes on two lines
+
+function fits(measure: Measure, it: TextItem, size: number): boolean {
+  return measure(it.text, it.font, size) <= it.box.x1 - it.box.x0;
+}
+
+export function fitText(items: readonly TextItem[], measure: Measure): DrawOp[] {
+  const ops: DrawOp[] = [];
+  const groups = new Map<string, TextItem[]>();
+  for (const it of items) groups.set(it.group, [...(groups.get(it.group) ?? []), it]);
+  for (const [, group] of groups) {
+    const cap = Math.min(...group.map(capOf));
+    const slack = group.length >= 9 ? Math.max(2, Math.floor(group.length / 9)) : 0;
+    let base = cap;
+    while (base > cap * 0.15 && group.filter((g) => fits(measure, g, base)).length < group.length - slack) base *= 0.97;
+    for (const it of group) {
+      const bw = it.box.x1 - it.box.x0;
+      const bh = it.box.y1 - it.box.y0;
+      const cx = (it.box.x0 + it.box.x1) / 2;
+      const cy = (it.box.y0 + it.box.y1) / 2;
+      let size = Math.min(base, capOf(it));
+      while (size > base * 0.2 && !fits(measure, it, size)) size *= 0.97;
+      const words = it.text.split(" ");
+      if (it.allowSplit && words.length >= 2 && size < base * SPLIT_BELOW) {
+        const mid = Math.ceil(words.length / 2);
+        const l1 = words.slice(0, mid).join(" ");
+        const l2 = words.slice(mid).join(" ");
+        let s2 = Math.min(base * 0.92, bh / 2.3);
+        while (s2 > base * 0.2 && Math.max(measure(l1, it.font, s2), measure(l2, it.font, s2)) > bw) s2 *= 0.97;
+        ops.push({ text: l1, font: it.font, cx, baseline: cy - 0.22 * s2, sizeMm: s2, role: it.role });
+        ops.push({ text: l2, font: it.font, cx, baseline: cy + 0.92 * s2, sizeMm: s2, role: it.role });
+        continue;
+      }
+      ops.push({ text: it.text, font: it.font, cx, baseline: cy + 0.32 * size, sizeMm: size, role: it.role });
+    }
+  }
+  return ops;
+}
+
+// ---------------------------------------------------------------- distance transform
+
+/** 1-D squared distance transform (Felzenszwalb & Huttenlocher, lower envelope of parabolas). */
+function dt1(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Float64Array): void {
+  let k = 0;
+  v[0] = 0;
+  z[0] = -Infinity;
+  z[1] = Infinity;
+  const sect = (q: number, p: number) => ((f[q] ?? 0) + q * q - ((f[p] ?? 0) + p * p)) / (2 * q - 2 * p);
+  for (let q = 1; q < n; q++) {
+    let s = sect(q, v[k] ?? 0);
+    while (s <= (z[k] ?? -Infinity)) {
+      k--;
+      s = sect(q, v[k] ?? 0);
+    }
+    k++;
+    v[k] = q;
+    z[k] = s;
+    z[k + 1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) {
+    while ((z[k + 1] ?? Infinity) < q) k++;
+    const p = v[k] ?? 0;
+    d[q] = (q - p) * (q - p) + (f[p] ?? 0);
+  }
+}
+
+/** Distance (px) from each inside pixel to the nearest outside pixel; 0 outside. */
+export function distanceInside(inside: Uint8Array, cols: number, rows: number): Float32Array {
+  const BIG = 1e20;
+  const n = Math.max(cols, rows);
+  const f = new Float64Array(n);
+  const d = new Float64Array(n);
+  const v = new Int32Array(n);
+  const z = new Float64Array(n + 1);
+  const g = new Float64Array(cols * rows);
+  for (let i = 0; i < cols * rows; i++) g[i] = inside[i] ? BIG : 0;
+  for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < rows; y++) f[y] = g[y * cols + x] ?? 0;
+    dt1(f, rows, d, v, z);
+    for (let y = 0; y < rows; y++) g[y * cols + x] = d[y] ?? 0;
+  }
+  const out = new Float32Array(cols * rows);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) f[x] = g[y * cols + x] ?? 0;
+    dt1(f, cols, d, v, z);
+    for (let x = 0; x < cols; x++) out[y * cols + x] = Math.sqrt(d[x] ?? 0);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- relief
+
+export type Masks = {
+  /** coverage 0..1 of the lettering */
+  text: Float32Array;
+  header: Float32Array;
+  stars: Float32Array;
+};
+
+/** Rows for `cols` with square pixels. */
+export function gridFor(widthMm: number, heightMm: number, longSide: number): { cols: number; rows: number } {
+  const k = longSide / Math.max(widthMm, heightMm);
+  return { cols: Math.max(8, Math.round(widthMm * k)), rows: Math.max(8, Math.round(heightMm * k)) };
+}
+
+function interp(x: number, xs: readonly number[], ys: readonly number[]): number {
+  if (x <= (xs[0] ?? 0)) return ys[0] ?? 0;
+  for (let i = 1; i < xs.length; i++) {
+    const a = xs[i - 1] ?? 0;
+    const b = xs[i] ?? 0;
+    if (x <= b) return (ys[i - 1] ?? 0) + (((ys[i] ?? 0) - (ys[i - 1] ?? 0)) * (x - a)) / (b - a || 1);
+  }
+  return ys[ys.length - 1] ?? 0;
+}
+
+const FRAME_U = [0, 0.05, 0.12, 0.3, 0.42, 0.58, 0.72, 0.86, 1] as const;
+const FRAME_Z = [4.2, 5.6, 6.0, 7.2, 6.9, 4.6, 4.4, 3.0, 1.0] as const;
+const FIELD = 1.0;
+const TILE_RISE = 1.6;
+
+function binary(c: Float32Array): Uint8Array {
+  const b = new Uint8Array(c.length);
+  for (let i = 0; i < c.length; i++) b[i] = (c[i] ?? 0) > 0.5 ? 1 : 0;
+  return b;
+}
+
+/**
+ * Heights in mm, then normalized to 0..1. `depthMm` is the real relief range, so
+ * buildRelief / RLF reproduce the exact millimetres.
+ */
+export function composePanel(
+  layout: Layout,
+  masks: Masks,
+  cols: number,
+  rows: number,
+  style: LetterStyle,
+  letterMm: number,
+): { h: Float32Array; depthMm: number; heightsMm: Float32Array } {
+  const mmPx = layout.widthMm / cols;
+  const n = cols * rows;
+  const h = new Float32Array(n).fill(FIELD);
+  const k = layout.frameMm > 0 ? Math.min(1, Math.max(0.35, layout.frameMm / 26)) : 0;
+
+  // frame moulding
+  if (layout.frameMm > 0) {
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const d = Math.min(x, cols - 1 - x, y, rows - 1 - y) * mmPx;
+        if (d < layout.frameMm) h[y * cols + x] = FIELD + (interp(d / layout.frameMm, FRAME_U, FRAME_Z) - FIELD) * k;
+      }
+    }
+  }
+
+  // beads around the header and the grid
+  const bw = Math.max(0.6, 1.8 * (k || 0.6));
+  for (const b of layout.beads) {
+    const x0 = Math.max(0, Math.floor((b.x0 - bw - 2) / mmPx));
+    const x1 = Math.min(cols - 1, Math.ceil((b.x1 + bw + 2) / mmPx));
+    const y0 = Math.max(0, Math.floor((b.y0 - bw - 2) / mmPx));
+    const y1 = Math.min(rows - 1, Math.ceil((b.y1 + bw + 2) / mmPx));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const px = (x + 0.5) * mmPx;
+        const py = (y + 0.5) * mmPx;
+        const inX = px >= b.x0 - bw && px <= b.x1 + bw;
+        const inY = py >= b.y0 - bw && py <= b.y1 + bw;
+        if (!inX || !inY) continue;
+        const d = Math.min(Math.abs(px - b.x0), Math.abs(px - b.x1), Math.abs(py - b.y0), Math.abs(py - b.y1));
+        if (d < bw) {
+          const i = y * cols + x;
+          const z = FIELD + 1.6 * Math.sqrt(Math.max(0, 1 - (d / bw) ** 2)) * Math.max(0.6, k);
+          if (z > (h[i] ?? 0)) h[i] = z;
+        }
+      }
+    }
+  }
+
+  // tiles: raised faces with a soft bevel
+  if (layout.tiles.length) {
+    const tm = new Uint8Array(n);
+    const r = Math.max(0.6, 1.6 * Math.max(0.5, k));
+    for (const t of layout.tiles) {
+      const x0 = Math.max(0, Math.floor(t.x0 / mmPx));
+      const x1 = Math.min(cols - 1, Math.ceil(t.x1 / mmPx));
+      const y0 = Math.max(0, Math.floor(t.y0 / mmPx));
+      const y1 = Math.min(rows - 1, Math.ceil(t.y1 / mmPx));
+      for (let y = y0; y <= y1; y++) {
+        const py = (y + 0.5) * mmPx;
+        for (let x = x0; x <= x1; x++) {
+          const px = (x + 0.5) * mmPx;
+          const dx = Math.max(t.x0 + r - px, 0, px - (t.x1 - r));
+          const dy = Math.max(t.y0 + r - py, 0, py - (t.y1 - r));
+          if (px >= t.x0 && px <= t.x1 && py >= t.y0 && py <= t.y1 && dx * dx + dy * dy <= r * r) tm[y * cols + x] = 1;
+        }
+      }
+    }
+    const dt = distanceInside(tm, cols, rows);
+    const bevel = 1.4;
+    for (let i = 0; i < n; i++) {
+      if (!tm[i]) continue;
+      const face = FIELD + TILE_RISE * Math.min(1, ((dt[i] ?? 0) * mmPx) / bevel) ** 0.7;
+      if (face > (h[i] ?? 0)) h[i] = face;
+    }
+  }
+
+  // lettering
+  const addRounded = (mask: Float32Array, height: number, roundMm: number) => {
+    const b = binary(mask);
+    const dt = distanceInside(b, cols, rows);
+    for (let i = 0; i < n; i++) {
+      if (!b[i]) continue;
+      const u = Math.min(1, ((dt[i] ?? 0) * mmPx) / roundMm);
+      h[i] = (h[i] ?? 0) + height * Math.sqrt(Math.max(0, 1 - (1 - u) ** 2));
+    }
+  };
+  if (style === "vcarve") {
+    const b = binary(masks.text);
+    const dt = distanceInside(b, cols, rows);
+    const slope = 1.73; // 60° V-bit
+    for (let i = 0; i < n; i++) if (b[i]) h[i] = (h[i] ?? 0) - Math.min((dt[i] ?? 0) * mmPx * slope, letterMm);
+  } else if (style === "flat") {
+    addRounded(masks.text, letterMm, Math.max(mmPx * 0.8, 0.25));
+  } else {
+    addRounded(masks.text, letterMm, Math.max(mmPx * 1.5, 0.75));
+  }
+  addRounded(masks.header, letterMm * 1.6, Math.max(mmPx * 2, 1.3));
+  addRounded(masks.stars, letterMm * 1.2, Math.max(mmPx * 2, 2.5));
+
+  const sm = gaussianBlur(h, cols, rows, 0.6);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const z = sm[i] ?? 0;
+    if (z < lo) lo = z;
+    if (z > hi) hi = z;
+  }
+  const range = Math.max(1e-6, hi - lo);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = ((sm[i] ?? 0) - lo) / range;
+  return { h: out, depthMm: +range.toFixed(2), heightsMm: sm };
+}

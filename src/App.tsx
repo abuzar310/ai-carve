@@ -8,6 +8,11 @@ import { QUALITY, buildRelief, constrainedPreview, fieldCols, isSurfaceOnly, res
 import { writeStlAsync } from "./lib/stl";
 import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, validateStl, type MeshReport } from "./lib/validate";
 import { reliefBmp } from "./lib/bmp";
+import { reliefRlf } from "./lib/rlf";
+import { reliefTif } from "./lib/tif";
+import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, type PanelSpec } from "./lib/textPanel";
+import { proofPng, rasterPanel } from "./lib/textRaster";
+import { TextPanelCard } from "./TextPanelCard";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
 
@@ -36,6 +41,7 @@ const RELIEF = [
 
 const BUILD_STAGES = ["Preparing image", "Generating depth", "Building 3D relief", "Preparing preview"] as const;
 const DRAW_STAGES = ["Generating image", ...BUILD_STAGES] as const;
+const TEXT_STAGES = ["Typesetting", "Building 3D relief", "Preparing preview"] as const;
 const EXPORT_STAGES = ["Preparing height field", "Building export mesh", "Writing STL", "Validating", "Preparing download"] as const;
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -73,8 +79,9 @@ function trisLabel(n: number): string {
   return String(n);
 }
 
-function stagesFor(busy: string): readonly string[] {
+function stagesFor(busy: string, text = false): readonly string[] {
   if (!busy) return [];
+  if (text && (TEXT_STAGES as readonly string[]).includes(busy)) return TEXT_STAGES;
   if (busy === "Generating image" || busy === "Drawing") return DRAW_STAGES;
   if (/STL|export|Validat|Download|height field|Relief/i.test(busy)) return EXPORT_STAGES;
   return BUILD_STAGES;
@@ -105,7 +112,11 @@ export default function App() {
     cols: number;
     rows: number;
     invert: boolean;
+    /** Text panels: the field is already the exact relief, so no depth / clean-up passes. */
+    exact?: boolean;
   } | null>(null);
+  const [mode, setMode] = useState<"photo" | "text">("photo");
+  const [textSpec, setTextSpec] = useState<PanelSpec>(DEFAULT_SPEC);
   const lastImg = useRef<HTMLImageElement | null>(null);
   const [cutBg, setCutBg] = useState(true);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
@@ -195,6 +206,7 @@ export default function App() {
 
   const refined = useMemo(() => {
     if (!raw) return null;
+    if (raw.exact) return raw.height;
     const h = composeRelief(
       { luma: raw.height, alpha: raw.alpha, depth: raw.depth ?? null, cols: raw.cols, rows: raw.rows },
       {
@@ -501,6 +513,7 @@ export default function App() {
 
   function newProject() {
     clearPic();
+    setMode("photo");
     setBoard({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
     setContrast(1);
     setClean(0.5);
@@ -511,7 +524,87 @@ export default function App() {
     setQuality("high");
   }
 
+  /** Typeset the panel and build the exact relief at `longSide` samples on the long edge. */
+  async function textField(longSide: number) {
+    const lay = layoutPanel(textSpec);
+    const { cols, rows } = gridFor(textSpec.widthMm, textSpec.heightMm, longSide);
+    const { masks } = await rasterPanel(lay, cols, rows);
+    const out = composePanel(lay, masks, cols, rows, textSpec.style, textSpec.letterMm);
+    return { ...out, cols, rows };
+  }
+
+  async function buildText() {
+    setErr("");
+    setNote("");
+    setBusy("Typesetting");
+    try {
+      await tick();
+      const words = textSpec.template === "names99" ? 1 : textSpec.lines.filter((l) => l.trim()).length;
+      if (!words) throw new Error("Type some text first.");
+      const f = await textField(mobile ? 1024 : QUALITY.ultra.field);
+      setBusy("Building 3D relief");
+      await tick();
+      if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
+      setPic("");
+      lastImg.current = null;
+      sizedFor.current = "text";
+      setImgSize(null);
+      setPiece("panel");
+      setFileMeta({ name: textSpec.template === "names99" ? "99-names-panel" : "text-panel", size: 0, w: f.cols, h: f.rows });
+      setBoard({ widthMm: textSpec.widthMm, heightMm: textSpec.heightMm, depthMm: f.depthMm, baseMm: 0 });
+      setRaw({ height: f.h, alpha: null, depth: null, cols: f.cols, rows: f.rows, invert: false, exact: true });
+      setCutPass((n) => n + 1);
+      setView((v) => ({ kind: "persp", n: v.n + 1 }));
+      setBusy("Preparing preview");
+      await tick();
+    } catch (e) {
+      setErr(sayErr(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveTextRelief(kind: "rlf" | "tif") {
+    setErr("");
+    setNote("");
+    setBusy("Relief");
+    try {
+      await tick();
+      const long = Math.min(4096, Math.round(Math.max(textSpec.widthMm, textSpec.heightMm) / 0.25));
+      const f = await textField(long);
+      const stem = artcamNames(exportSource(), textSpec.widthMm, textSpec.heightMm, f.depthMm, 0).bmp.replace(/\.bmp$/, "");
+      if (kind === "rlf") {
+        const bytes = reliefRlf(f.h, f.cols, f.rows, textSpec.widthMm, textSpec.heightMm, f.depthMm);
+        await saveFile(`${stem}.rlf`, new Blob([bytes as BlobPart], { type: "application/octet-stream" }), "application/octet-stream");
+        setNote(`ArtCAM relief downloaded · ${f.cols} × ${f.rows} · ${f.depthMm} mm`);
+      } else {
+        const bytes = reliefTif(f.h, f.cols, f.rows, textSpec.widthMm, textSpec.heightMm);
+        await saveFile(`${stem}.tif`, new Blob([bytes as BlobPart], { type: "image/tiff" }), "image/tiff");
+        setNote(`16-bit TIFF downloaded · set the relief height to ${f.depthMm} mm in ArtCAM`);
+      }
+    } catch (e) {
+      setErr(sayErr(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveProof() {
+    setErr("");
+    try {
+      setBusy("Typesetting");
+      const blob = await proofPng(layoutPanel(textSpec));
+      await saveFile(`${textSpec.template === "names99" ? "99-names" : "text-panel"}-proof.png`, blob, "image/png");
+      setNote("Proof image downloaded. Check every word before carving.");
+    } catch (e) {
+      setErr(sayErr(e));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function regenerate() {
+    if (mode === "text") return buildText();
     if (!pic) return;
     setErr("");
     setNote("");
@@ -523,7 +616,7 @@ export default function App() {
     }
   }
 
-  const step = !pic ? "source" : busy && !ready ? "generate" : /STL|shared|downloaded/i.test(note) ? "export" : ready ? "relief" : "generate";
+  const step = !pic && !raw ? "source" : busy && !ready ? "generate" : /STL|shared|downloaded/i.test(note) ? "export" : ready ? "relief" : "generate";
 
   async function toggleFull() {
     const el = wellRef.current;
@@ -537,7 +630,7 @@ export default function App() {
   }
 
   const reliefKind = RELIEF.find((r) => r.depth === board.depthMm)?.id ?? "custom";
-  const stageList = stagesFor(busy);
+  const stageList = stagesFor(busy, mode === "text");
   const exportLabel = shareOk ? "Share / Save STL" : "Download STL";
   const stageI = stageList.indexOf(busy === "Download ready" ? "Preparing download" : busy);
 
@@ -687,12 +780,35 @@ export default function App() {
           ) : (
             <div className={"drop" + (over ? " on" : "")}>
               <div>
-                <h2>Create your 3D relief</h2>
-                <p>Upload an image to begin. Light areas become the raised carving.</p>
-                <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
-                  Upload image
-                </button>
-                <p className="hint">JPG, PNG, WebP, or BMP. Drag and drop works too.</p>
+                {mode === "text" ? (
+                  <>
+                    <h2>Text panel</h2>
+                    <p>Choose a template and type your text in the Text panel card, then build. Lettering is typeset exactly, no AI guessing.</p>
+                    <button type="button" className="btn pri" onClick={() => void buildText()} disabled={!!busy}>
+                      Build text panel
+                    </button>
+                    <p className="hint">
+                      <button type="button" className="linkish" onClick={() => setMode("photo")}>
+                        Back to photo relief
+                      </button>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2>Create your 3D relief</h2>
+                    <p>Upload an image to begin. Light areas become the raised carving.</p>
+                    <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
+                      Upload image
+                    </button>
+                    <p className="hint">JPG, PNG, WebP, or BMP. Drag and drop works too.</p>
+                    <p className="hint">
+                      Lettering, names or Quran verses?{" "}
+                      <button type="button" className="linkish" onClick={() => setMode("text")}>
+                        Make a text panel
+                      </button>
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -765,6 +881,20 @@ export default function App() {
         </div>
 
         <aside className="rail">
+          {mode === "text" ? (
+            <TextPanelCard
+              spec={textSpec}
+              setSpec={setTextSpec}
+              busy={!!busy}
+              built={!!raw?.exact}
+              onBuild={() => void buildText()}
+              onRlf={() => void saveTextRelief("rlf")}
+              onTif={() => void saveTextRelief("tif")}
+              onProof={() => void saveProof()}
+            />
+          ) : null}
+          {mode === "photo" ? (
+            <>
           <div className="card">
             <h3>Piece</h3>
             <div className="seg" role="group" aria-label="Kind of piece">
@@ -812,6 +942,9 @@ export default function App() {
             ) : null}
           </div>
 
+            </>
+          ) : null}
+
           <div className="card">
             <h3>Relief</h3>
             <div className="seg" role="group" aria-label="Relief depth">
@@ -829,6 +962,8 @@ export default function App() {
             </div>
           </div>
 
+          {mode === "photo" ? (
+            <>
           <div className="card">
             <h3>Image</h3>
             <label className="toggle">
@@ -840,6 +975,9 @@ export default function App() {
               Cut plain background to 0 (when the picture has one)
             </label>
           </div>
+
+            </>
+          ) : null}
 
           <details className="card adv">
             <summary>Advanced settings</summary>
