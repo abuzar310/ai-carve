@@ -91,6 +91,29 @@ function trWord(w: string): string {
   return w.length >= 5 ? w.replace(/([^aeiou'])[aiu]n$/i, "$1") : w;
 }
 const trSkeleton = (t: string) => skeleton(t.split(/\s+/).map(trWord).join(" "));
+const trSound = (t: string) => sound(t.split(/\s+/).map(trWord).join(" "));
+
+/** Like skeleton(), but keeps the vowels (as a / i / u), so "abuzar" and "baseer" differ. */
+export function sound(raw: string): string {
+  let s = raw.replace(/AA/g, "'");
+  s = s.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  s = s.replace(new RegExp(`\\bal${SUN}\\1`, "g"), "a$1$1");
+  s = s.replace(/dh/g, "th").replace(/ph/g, "f").replace(/v/g, "w").replace(/ck/g, "k");
+  s = s.replace(/th/g, "s").replace(/z/g, "s").replace(/aw/g, "au").replace(/ay(?![aeiou])/g, "ai");
+  s = s.replace(/[^a-z]/g, "");
+  s = s.replace(/[ei]/g, "i").replace(/[ou]/g, "u");
+  return s.replace(/(.)\1+/g, "$1");
+}
+
+/** Consonants decide most of the score; vowels break ties a skeleton cannot (short words especially). */
+function score(qSkel: string, qSound: string, skel: string, snd: string): number {
+  const c = similarity(qSkel, skel);
+  if (c < 0.6) return 0.65 * c; // cannot reach the 0.75 "close" list: skip the vowel pass
+  const v = similarity(qSound, snd);
+  const sc = 0.65 * c + 0.35 * v;
+  // a very short consonant skeleton is easy to hit by chance: only "sure" if the vowels agree too
+  return qSkel.length <= 4 && v < 0.85 ? Math.min(sc, 0.9) : sc;
+}
 
 function lev(a: string, b: string): number {
   if (a === b) return 0;
@@ -113,6 +136,15 @@ function lev(a: string, b: string): number {
 export function similarity(a: string, b: string): number {
   const m = Math.max(a.length, b.length);
   return m ? 1 - lev(a, b) / m : 1;
+}
+
+/**
+ * The Uthmani text follows the King Fahd Complex convention, which borrows U+0657 / U+0656 / U+065E
+ * for open fathatan / kasratan / dammatan. Amiri Quran draws those code points as other marks (or not
+ * at all), so map them to the proper Unicode open-tanween marks before showing or carving.
+ */
+export function forFont(t: string): string {
+  return t.replace(/\u0657/g, "\u08f0").replace(/\u0656/g, "\u08f2").replace(/\u065e/g, "\u08f1");
 }
 
 /** Pause and ayah-end marks: kept in full ayahs, dropped from a few picked-out words. */
@@ -141,9 +173,26 @@ function byReference(index: QuranIndex | null, q: string): Hit[] {
       const t = ayahText(index, s, k);
       if (t) parts.push(b > a ? `${t} ﴿${arNum(k)}﴾` : t);
     }
-    if (parts.length) out.push({ arabic: parts.join(" "), source: `Quran ${s}:${a}${b > a ? "-" + b : ""}`, label: q.trim(), score: 1, kind: "quran" });
+    if (parts.length) out.push({ arabic: forFont(parts.join(" ")), source: `Quran ${s}:${a}${b > a ? "-" + b : ""}`, label: q.trim(), score: 1, kind: "quran" });
   }
   return out;
+}
+
+type Prepared = { full: string; fullV: string; sk: string[]; sv: string[]; arW: string[]; trW: string[] }[][];
+const prepared = new WeakMap<QuranIndex, Prepared>();
+/** Skeletons and sound forms of every ayah, worked out once per loaded library. */
+function prepare(index: QuranIndex): Prepared {
+  let p = prepared.get(index);
+  if (!p) {
+    p = index.s.map(([, , , ayahs]) =>
+      ayahs.map(([ar, tr]) => {
+        const trW = tr.split(/\s+/);
+        return { full: trSkeleton(tr), fullV: trSound(tr), sk: trW.map((w) => skeleton(trWord(w))), sv: trW.map((w) => sound(trWord(w))), arW: ar.split(/\s+/), trW };
+      }),
+    );
+    prepared.set(index, p);
+  }
+  return p;
 }
 
 export function search(index: QuranIndex | null, query: string, limit = 6): Hit[] {
@@ -152,6 +201,7 @@ export function search(index: QuranIndex | null, query: string, limit = 6): Hit[
   const refs = byReference(index, q);
   if (refs.length) return refs;
   const qs = skeleton(q);
+  const qv = sound(q);
   if (qs.length < 2) return [];
   const hits: Hit[] = [];
   const push = (h: Hit) => {
@@ -159,23 +209,26 @@ export function search(index: QuranIndex | null, query: string, limit = 6): Hit[
   };
 
   NAMES_99_EN.forEach((en, i) => {
-    const sc = Math.max(similarity(qs, skeleton(en)), similarity(qs, skeleton("ya " + en.replace(/^(a[lnrstdz]h?)-/i, ""))));
+    const ya = "ya " + en.replace(/^(a[lnrstdz]h?)-/i, "");
+    const sc = Math.max(score(qs, qv, skeleton(en), sound(en)), score(qs, qv, skeleton(ya), sound(ya)));
     push({ arabic: NAMES_99[i] ?? "", source: "99 Names", label: en, score: sc, kind: "name" });
   });
-  for (const p of PHRASES) push({ arabic: p.ar, source: "Phrase", label: p.en[0] ?? "", score: Math.max(...p.en.map((e) => similarity(qs, skeleton(e)))), kind: "phrase" });
+  for (const p of PHRASES) push({ arabic: p.ar, source: "Phrase", label: p.en[0] ?? "", score: Math.max(...p.en.map((e) => score(qs, qv, skeleton(e), sound(e)))), kind: "phrase" });
 
   if (index) {
     for (const p of PASSAGES) {
-      const sc = Math.max(...p.en.map((e) => similarity(qs, skeleton(e))));
+      const sc = Math.max(...p.en.map((e) => score(qs, qv, skeleton(e), sound(e))));
       const t = ayahText(index, p.ref[0], p.ref[1]);
-      if (t) push({ arabic: t, source: `Quran ${p.ref[0]}:${p.ref[1]}`, label: p.en[0] ?? "", score: sc, kind: "quran" });
+      if (t) push({ arabic: forFont(t), source: `Quran ${p.ref[0]}:${p.ref[1]}`, label: p.en[0] ?? "", score: sc, kind: "quran" });
     }
     const qq = skeleton(q.replace(/^(surah|surat|sura)\s+/i, ""));
     for (const [n, name, en, ayahs] of index.s) {
-      const sc = Math.max(similarity(qq, skeleton(en)), similarity(qq, skeleton(en.replace(/^a[lnrstdz]h?-/i, ""))));
+      const qqv = sound(q.replace(/^(surah|surat|sura)\s+/i, ""));
+      const bare = en.replace(/^a[lnrstdz]h?-/i, "");
+      const sc = Math.max(score(qq, qqv, skeleton(en), sound(en)), score(qq, qqv, skeleton(bare), sound(bare)));
       if (sc >= 0.85 && ayahs.length <= 12)
         push({
-          arabic: ayahs.map(([t], k) => `${t} ﴿${arNum(k + 1)}﴾`).join(" "),
+          arabic: forFont(ayahs.map(([t], k) => `${t} ﴿${arNum(k + 1)}﴾`).join(" ")),
           source: `Surah ${en} (${n}) · ${name}`,
           label: `Surah ${en}`,
           score: sc,
@@ -184,28 +237,29 @@ export function search(index: QuranIndex | null, query: string, limit = 6): Hit[
     }
     // ayahs and runs of words inside ayahs
     const qLen = qs.length;
-    for (const [n, , , ayahs] of index.s) {
+    const prep = prepare(index);
+    index.s.forEach(([n, , , ayahs], si) => {
       ayahs.forEach(([ar, tr], ai) => {
-        const full = trSkeleton(tr);
-        if (Math.abs(full.length - qLen) <= qLen * 0.35) push({ arabic: ar, source: `Quran ${n}:${ai + 1}`, label: tr, score: similarity(qs, full), kind: "quran" });
-        const arW = ar.split(/\s+/);
-        const trW = tr.split(/\s+/);
+        const P = prep[si]![ai]!;
+        if (Math.abs(P.full.length - qLen) <= qLen * 0.35) push({ arabic: forFont(ar), source: `Quran ${n}:${ai + 1}`, label: tr, score: score(qs, qv, P.full, P.fullV), kind: "quran" });
+        const { arW, trW, sk, sv } = P;
         if (arW.length !== trW.length || trW.length < 2) return;
-        const sk = trW.map((w) => skeleton(trWord(w)));
         let best = { sc: 0, i: 0, j: 0 };
         for (let i = 0; i < sk.length; i++) {
           let joined = "";
+          let joinedV = "";
           for (let j = i; j < sk.length; j++) {
             joined += sk[j];
+            joinedV += sv[j];
             if (joined.length > qLen * 1.35 + 1) break;
             if (joined.length < qLen * 0.65) continue;
-            const sc = similarity(qs, joined);
+            const sc = score(qs, qv, joined, joinedV.replace(/(.)\1+/g, "$1"));
             if (sc > best.sc) best = { sc, i, j };
           }
         }
         if (best.sc >= 0.75 && !(best.i === 0 && best.j === sk.length - 1)) {
           push({
-            arabic: arW.slice(best.i, best.j + 1).join(" ").replace(PAUSE, "").trim(),
+            arabic: forFont(arW.slice(best.i, best.j + 1).join(" ").replace(PAUSE, "").trim()),
             source: `Quran ${n}:${ai + 1} (word${best.j > best.i ? "s" : ""} ${best.i + 1}${best.j > best.i ? "–" + (best.j + 1) : ""})`,
             label: trW.slice(best.i, best.j + 1).join(" "),
             score: best.sc,
@@ -213,7 +267,7 @@ export function search(index: QuranIndex | null, query: string, limit = 6): Hit[
           });
         }
       });
-    }
+    });
   }
 
   // best first; the same Arabic only once (keep the earliest source: names/phrases, then the first ayah)

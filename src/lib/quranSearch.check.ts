@@ -58,6 +58,18 @@ r = top("zikr");
 ok(r.length > 0, "zikr finds something");
 r = top("allahu la ilaha illa huwa alhayyul qayyum");
 ok(r.some((h) => h.source.startsWith("Quran 2:255") || h.source.startsWith("Quran 3:2")), `start of Ayat al-Kursi found (${r[0]?.source})`);
+// a person's name that is not in the library must never look like a sure match (bug: "abuzar" → بصير 100%)
+for (const name of ["abuzar", "abuzer", "zubair", "basir khan"]) {
+  r = top(name);
+  ok(r.every((h) => h.score < SURE), `"${name}" is not a sure match (${r[0]?.arabic} ${r[0] ? Math.round(r[0].score * 100) : ""}%)`);
+}
+r = top("baseer");
+ok(r.some((h) => plain(h.arabic).includes("بصير") && h.score >= SURE), "baseer still finds بصير");
+// KFGQPC open-tanween code points are mapped to the Unicode open tanween marks the font can draw
+r = top("36:58");
+ok(!/[\u0656\u0657\u065e]/.test(r[0]!.arabic), "36:58 has no KFGQPC tanween code points");
+ok(r[0]!.arabic.includes("\u08f1") && r[0]!.arabic.includes("\u08f0") && r[0]!.arabic.includes("\u08f2"), "36:58 uses open dammatan, fathatan and kasratan");
+for (const h of search(index, "baseer")) ok(!/[\u0656\u0657\u065e]/.test(h.arabic), "word results are mapped too");
 r = top("xyzzy qwrtp");
 ok(r.every((h) => h.score < SURE), "nonsense never counts as a sure match");
 ok(search(index, "") .length === 0, "empty query → nothing");

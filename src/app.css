@@ -414,3 +414,4 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
 .find-arabic .hit-acts .btn { padding: 6px 10px; font-size: 13px; min-height: 36px }
 .find-arabic .credit { color: var(--mute); font-size: 11px }
 .find-arabic .err { color: #b3261e }
+.find-arabic .no-sure { margin: 0; padding: 8px 10px; border-radius: 8px; background: #fbefd9; color: #6b4a14; font-size: 13px; line-height: 1.45 }

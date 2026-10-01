@@ -70,6 +70,12 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
         {state === "error" ? <small className="err">{msg}</small> : null}
         {hits && !state && !hits.length ? <small>No close match. Try another spelling, or a reference like 112:1.</small> : null}
       </div>
+      {hits && hits.length && hits.every((h) => h.score < SURE) ? (
+        <p className="no-sure" role="note">
+          No exact match. The library has the Quran, the 99 Names and common phrases — personal names aren’t in it yet. The
+          results below only sound similar; don’t use them unless one is what you meant.
+        </p>
+      ) : null}
       {hits && hits.length ? (
         <ul className="hits">
           {hits.map((h, i) => (
