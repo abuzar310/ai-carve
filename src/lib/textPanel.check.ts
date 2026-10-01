@@ -1,4 +1,5 @@
 import {
+  switchTemplate,
   BISMILLAH,
   DEFAULT_SPEC,
   NAMES_99,
@@ -128,4 +129,14 @@ const noFrame = composePanel(layoutPanel({ ...DEFAULT_SPEC, frame: false }), mas
 ok(noFrame.depthMm < raised.depthMm, "without a frame the relief is shallower");
 ok(raised.h.every((v) => Number.isFinite(v)), "no NaN in the field");
 
+// ---- switching templates (written before switchTemplate existed)
+{
+  const fromQuran: PanelSpec = { ...DEFAULT_SPEC, template: "plate", font: "quran", lines: ["إِنَّا لِلَّهِ"], header: "" };
+  const s99 = switchTemplate(fromQuran, "names99");
+  ok(s99.template === "names99" && s99.font === "naskh" && s99.header === BISMILLAH, "99 Names resets to the Naskh font and the Bismillah");
+  const sPlate = switchTemplate(DEFAULT_SPEC, "plate");
+  ok(sPlate.header === "" && sPlate.lines.length === 1, "plate: no header, a starter line");
+  const sGrid = switchTemplate({ ...DEFAULT_SPEC, lines: ["a", "b"] }, "grid");
+  ok(sGrid.header === "" && sGrid.lines.join() === "a,b", "grid keeps typed words and drops the 99 Names header");
+}
 console.log(`carve textPanel.check OK (${n} assertions)`);

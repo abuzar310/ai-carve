@@ -1,0 +1,7 @@
+public/data/quran.json — Quran text and transliteration used for the text-panel search.
+
+Arabic text: Uthmani script from The Noble Qur'an Encyclopedia — https://quranenc.com
+English transliteration: Tanzil — https://tanzil.net/trans/en.transliteration
+Packaged by quran-json (https://github.com/risan/quran-json) by Risan Bagja Pradana,
+licensed CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
+This derived file (fields re-arranged, nothing in the text changed) is shared under the same licence.

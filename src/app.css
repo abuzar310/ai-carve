@@ -404,3 +404,13 @@ details.gen summary { cursor: pointer; min-height: 36px; color: var(--mute); fon
 .text-exports { margin-top: 8px }
 .text-exports .btn { font-size: 13px }
 .text-panel textarea { font-family: inherit; line-height: 1.6 }
+.find-arabic { display: grid; gap: 8px; padding: 10px 0 4px; border-top: 1px solid var(--line, #e6dccb); border-bottom: 1px solid var(--line, #e6dccb) }
+.find-arabic .hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 340px; overflow-y: auto }
+.find-arabic .hits li { border: 1px solid var(--line, #e6dccb); border-radius: 10px; padding: 8px 10px; display: grid; gap: 4px }
+.find-arabic .hits li.sure { border-color: var(--brass); box-shadow: inset 3px 0 0 var(--brass) }
+.find-arabic .ar { font-size: 22px; line-height: 1.9; margin: 0; overflow-wrap: anywhere }
+.find-arabic .meta { margin: 0; font-size: 12px; color: var(--mute) }
+.find-arabic .hit-acts { display: flex; gap: 6px; flex-wrap: wrap }
+.find-arabic .hit-acts .btn { padding: 6px 10px; font-size: 13px; min-height: 36px }
+.find-arabic .credit { color: var(--mute); font-size: 11px }
+.find-arabic .err { color: #b3261e }

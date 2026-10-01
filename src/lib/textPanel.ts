@@ -73,6 +73,13 @@ export const DEFAULT_SPEC: PanelSpec = {
   columns: 4,
 };
 
+/** Change template, resetting what belongs to the old one (the 99 Names board uses Naskh + Bismillah). */
+export function switchTemplate(spec: PanelSpec, t: Template): PanelSpec {
+  if (t === "names99") return { ...spec, template: t, header: BISMILLAH, font: "naskh" };
+  if (t === "plate") return { ...spec, template: t, header: "", lines: spec.lines.some((l) => l.trim()) ? spec.lines : ["بسم الله"] };
+  return { ...spec, template: t, header: spec.header === BISMILLAH ? "" : spec.header };
+}
+
 export type TextItem = {
   text: string;
   font: FontId;

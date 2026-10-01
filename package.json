@@ -7,7 +7,7 @@
     "dev": "vite --host --port 3030",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host --port 3030",
-    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/rlf.check.ts && tsx --no-warnings src/lib/bmp.check.ts && tsx --no-warnings src/lib/tif.check.ts && tsx --no-warnings src/lib/names.check.ts && tsx --no-warnings src/lib/mesh.check.ts && tsx --no-warnings src/lib/relief.check.ts && tsx --no-warnings src/lib/piece.check.ts && tsx --no-warnings src/lib/tiles.check.ts && tsx --no-warnings src/lib/textPanel.check.ts"
+    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/rlf.check.ts && tsx --no-warnings src/lib/bmp.check.ts && tsx --no-warnings src/lib/tif.check.ts && tsx --no-warnings src/lib/names.check.ts && tsx --no-warnings src/lib/mesh.check.ts && tsx --no-warnings src/lib/relief.check.ts && tsx --no-warnings src/lib/piece.check.ts && tsx --no-warnings src/lib/tiles.check.ts && tsx --no-warnings src/lib/textPanel.check.ts && tsx --no-warnings src/lib/quranSearch.check.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
