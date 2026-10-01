@@ -10,7 +10,7 @@ import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, 
 import { reliefBmp } from "./lib/bmp";
 import { reliefRlf } from "./lib/rlf";
 import { reliefTif } from "./lib/tif";
-import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, sizeProblem, type PanelSpec } from "./lib/textPanel";
+import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, restoreSpec, sizeProblem, type PanelSpec } from "./lib/textPanel";
 import { proofPng, rasterPanel } from "./lib/textRaster";
 import { TextPanelCard } from "./TextPanelCard";
 import { artcamNames } from "./lib/names";
@@ -115,8 +115,24 @@ export default function App() {
     /** Text panels: the field is already the exact relief, so no depth / clean-up passes. */
     exact?: boolean;
   } | null>(null);
-  const [mode, setMode] = useState<"photo" | "text">("photo");
-  const [textSpec, setTextSpec] = useState<PanelSpec>(DEFAULT_SPEC);
+  // typed text-panel work survives a refresh (stored only in this browser)
+  const stored = (k: string) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  };
+  const [mode, setMode] = useState<"photo" | "text">(() => (stored("carve.mode") === "text" ? "text" : "photo"));
+  const [textSpec, setTextSpec] = useState<PanelSpec>(() => restoreSpec(stored("carve.textSpec.v1")));
+  useEffect(() => {
+    try {
+      localStorage.setItem("carve.textSpec.v1", JSON.stringify(textSpec));
+      localStorage.setItem("carve.mode", mode);
+    } catch {
+      /* private mode or full storage: nothing is remembered, nothing breaks */
+    }
+  }, [textSpec, mode]);
   /** The settings the current 3D relief was built from: downloads use these, not unbuilt edits. */
   const [builtSpec, setBuiltSpec] = useState<PanelSpec | null>(null);
   const [letterMm, setLetterMm] = useState(0);

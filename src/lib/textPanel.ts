@@ -100,6 +100,32 @@ export function quranMarks(t: string): string {
   return /[\u0671\u06e1]/.test(u) ? u.replace(/\u0657/g, "\u08f0").replace(/\u0656/g, "\u08f2") : u;
 }
 
+/** Read text-panel settings saved in the browser; anything missing, unknown or out of range falls back to the default. */
+export function restoreSpec(saved: string | null): PanelSpec {
+  let o: Record<string, unknown>;
+  try {
+    o = saved ? (JSON.parse(saved) as Record<string, unknown>) : {};
+    if (!o || typeof o !== "object") o = {};
+  } catch {
+    o = {};
+  }
+  const d = DEFAULT_SPEC;
+  const pick = <T,>(v: unknown, ok: readonly T[], def: T): T => (ok.includes(v as T) ? (v as T) : def);
+  const num = (v: unknown, lo: number, hi: number, def: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
+  return {
+    template: pick(o.template, ["names99", "plate", "grid"] as const, d.template),
+    widthMm: num(o.widthMm, 1, 10000, d.widthMm),
+    heightMm: num(o.heightMm, 1, 10000, d.heightMm),
+    lines: Array.isArray(o.lines) ? o.lines.filter((l): l is string => typeof l === "string").slice(0, 200).map((l) => l.slice(0, 500)) : d.lines,
+    header: typeof o.header === "string" ? o.header.slice(0, 500) : d.header,
+    font: pick(o.font, ["naskh", "quran"] as const, d.font),
+    style: pick(o.style, ["raised", "vcarve", "flat"] as const, d.style),
+    letterMm: num(o.letterMm, 0.6, 4, d.letterMm),
+    frame: typeof o.frame === "boolean" ? o.frame : d.frame,
+    columns: Math.round(num(o.columns, 1, 20, d.columns)),
+  };
+}
+
 export type TextItem = {
   text: string;
   font: FontId;

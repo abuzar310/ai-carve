@@ -1,4 +1,5 @@
 import {
+  restoreSpec,
   quranMarks,
   sizeProblem,
   switchTemplate,
@@ -172,5 +173,17 @@ ok(sizeProblem({ ...DEFAULT_SPEC, widthMm: 30, heightMm: 3000 }) === null, "the 
   ok(top >= lay.items[0]!.box.y0 - 1e-6 && bottom <= lay.items[0]!.box.y1 + 1e-6, "wrapped block stays inside its box");
   const short = fitText(layoutPanel({ ...DEFAULT_SPEC, template: "plate", header: "", lines: ["بسم الله"] }).items, m);
   ok(short.length === 1, "a short line stays on one line");
+}
+// ---- settings saved in the browser come back safely (written before restoreSpec existed)
+{
+  const saved = { ...DEFAULT_SPEC, template: "plate", lines: ["Mohammed Abuzar", "بسم الله"], widthMm: 450, style: "vcarve" };
+  const r = restoreSpec(JSON.stringify(saved));
+  ok(r.template === "plate" && r.lines.join("|") === "Mohammed Abuzar|بسم الله" && r.widthMm === 450 && r.style === "vcarve", "a saved plate comes back as typed");
+  ok(JSON.stringify(restoreSpec(null)) === JSON.stringify(DEFAULT_SPEC), "nothing saved → defaults");
+  ok(JSON.stringify(restoreSpec("{not json")) === JSON.stringify(DEFAULT_SPEC), "broken JSON → defaults");
+  const bad = restoreSpec(JSON.stringify({ template: "spaceship", widthMm: "wide", lines: "x", font: 7, style: "glitter", letterMm: -3, columns: 1e9, frame: "yes" }));
+  ok(bad.template === DEFAULT_SPEC.template && bad.widthMm === DEFAULT_SPEC.widthMm && Array.isArray(bad.lines) && bad.font === DEFAULT_SPEC.font && bad.style === DEFAULT_SPEC.style, "unknown values fall back field by field");
+  ok(bad.letterMm >= 0.6 && bad.letterMm <= 4 && bad.columns <= 20 && typeof bad.frame === "boolean", "numbers clamped to what the card allows");
+  ok(restoreSpec(JSON.stringify({ ...saved, lines: Array(500).fill("x".repeat(2000)) })).lines.length <= 200, "huge saved text is trimmed");
 }
 console.log(`carve textPanel.check OK (${n} assertions)`);

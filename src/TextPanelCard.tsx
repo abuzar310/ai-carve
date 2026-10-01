@@ -18,7 +18,11 @@ import { loadFont } from "./lib/textRaster";
 let quranIndex: Promise<QuranIndex> | null = null;
 function loadQuran(): Promise<QuranIndex> {
   if (!quranIndex) {
-    quranIndex = fetch("/data/quran.json").then((r) => {
+    quranIndex = fetch("/data/quran.json")
+      .catch(() => {
+        throw new Error("Couldn’t load the Quran library. Check your connection and try again.");
+      })
+      .then((r) => {
       if (!r.ok) throw new Error("Couldn’t load the Quran library. Check your connection and try again.");
       return r.json() as Promise<QuranIndex>;
     });
