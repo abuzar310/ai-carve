@@ -18,8 +18,17 @@ NOTEBOOK = "training/ai_carve_relief_kaggle.ipynb"
 MODEL = "ai-carve-relief-v1"
 
 
-def note(msg):  print(f"::notice::{msg}", flush=True)
-def fail(msg):  print(f"::error::{msg}", flush=True); sys.exit(1)
+LOG = os.environ.get("KAGGLE_CI_LOG", "kaggle-status.txt")
+
+
+def _log(level, msg):
+    print(f"::{level}::{msg}", flush=True)
+    with open(LOG, "a") as f:
+        f.write(f"[{level}] {msg}\n")
+
+
+def note(msg):  _log("notice", msg)
+def fail(msg):  _log("error", msg); sys.exit(1)
 
 
 def main(action):

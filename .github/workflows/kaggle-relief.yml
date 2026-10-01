@@ -25,6 +25,17 @@ jobs:
           python-version: "3.12"
       - run: pip install -q "kaggle>=2.2"
       - run: python training/kaggle_ci.py ${{ inputs.action }}
+        env:
+          KAGGLE_CI_LOG: ${{ runner.temp }}/kaggle-status.txt
+      # always: publish the messages on the small kaggle-status branch, so they can be read without logs
+      - if: always()
+        run: |
+          f="$RUNNER_TEMP/kaggle-status.txt"; [ -f "$f" ] || echo "[error] no messages (step crashed early)" > "$f"
+          d=$(mktemp -d); cd "$d"; git init -q; git checkout -q -b kaggle-status
+          { echo "action: ${{ inputs.action }}  run: ${{ github.run_id }}  time: $(date -u +%FT%TZ)"; cat "$f"; } > status.txt
+          git add status.txt
+          git -c user.name="Claude (for abuzar310)" -c user.email="noreply@anthropic.com" commit -qm "kaggle status"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" kaggle-status
       # fetch: put the results on a separate branch, never straight on main (the live site)
       - if: inputs.action == 'fetch'
         run: |
