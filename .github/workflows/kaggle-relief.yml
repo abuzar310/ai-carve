@@ -1,0 +1,36 @@
+name: Kaggle relief training
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "check · start · status · fetch"
+        type: choice
+        options: [check, start, status, fetch]
+        default: check
+
+permissions:
+  contents: write
+
+jobs:
+  kaggle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q "kaggle>=2.2"
+      - run: python training/kaggle_ci.py ${{ inputs.action }}
+      # fetch: put the results on a separate branch, never straight on main (the live site)
+      - if: inputs.action == 'fetch'
+        run: |
+          git config user.name "Claude (for abuzar310)"
+          git config user.email "noreply@anthropic.com"
+          git checkout -B relief-model-results
+          git add training/results public/models || true
+          git commit -m "Relief model results from Kaggle" || echo "nothing to commit"
+          git push -f origin relief-model-results
