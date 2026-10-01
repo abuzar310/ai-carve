@@ -142,7 +142,7 @@ export function ReliefPreview({
       else if (v === "front") camera.position.set(center.x, center.y - fit * 1.02, center.z + size.z * 0.45);
       else if (v === "side") camera.position.set(center.x + fit * 1.02, center.y, center.z + size.z * 0.45);
       else if (v === "fit") camera.position.set(center.x + fit * 0.7, center.y - fit * 0.86, center.z + fit * 0.3);
-      else camera.position.set(center.x + fit * 0.58, center.y - fit * 0.8, center.z + fit * 0.26);
+      else camera.position.set(center.x + fit * 0.38, center.y - fit * 0.76, center.z + fit * 0.66); // ~35° above, whole panel in view
       camera.near = Math.max(0.05, maxDim / 200);
       camera.far = maxDim * 40;
       camera.updateProjectionMatrix();

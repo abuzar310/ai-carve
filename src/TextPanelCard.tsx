@@ -177,12 +177,9 @@ type Props = {
   busy: boolean;
   built: boolean;
   onBuild: () => void;
-  onRlf: () => void;
-  onTif: () => void;
-  onProof: () => void;
 };
 
-export function TextPanelCard({ spec, setSpec, busy, built, onBuild, onRlf, onTif, onProof }: Props) {
+export function TextPanelCard({ spec, setSpec, busy, built, onBuild }: Props) {
   const set = <K extends keyof PanelSpec>(k: K, v: PanelSpec[K]) => setSpec((s) => ({ ...s, [k]: v }));
   const num = (k: "widthMm" | "heightMm" | "columns", raw: string) => {
     const v = Number(raw);
@@ -294,22 +291,9 @@ export function TextPanelCard({ spec, setSpec, busy, built, onBuild, onRlf, onTi
         {built ? "Rebuild text panel" : "Build text panel"}
       </button>
 
-      {built ? (
-        <div className="actions two text-exports">
-          <button type="button" className="btn ghost" disabled={busy} onClick={onRlf}>
-            ArtCAM relief (.rlf)
-          </button>
-          <button type="button" className="btn ghost" disabled={busy} onClick={onTif}>
-            16-bit TIFF
-          </button>
-          <button type="button" className="btn ghost" disabled={busy} onClick={onProof}>
-            Proof image
-          </button>
-        </div>
-      ) : null}
       <small>
-        The .rlf and TIFF are made at 0.25&nbsp;mm detail. Download the proof image and have someone who reads the script check it
-        before carving.
+        After building, download the STL, .rlf or TIFF from Export. Check the proof image with someone who reads the script before
+        carving.
       </small>
     </div>
   );

@@ -672,7 +672,7 @@ export default function App() {
         <div className="top-actions">
           <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
             <i />
-            {busy ? `${busy}…` : ready ? "Ready" : "Add a picture"}
+            {busy ? `${busy}…` : ready ? "Ready" : mode === "text" ? "Build a text panel" : "Add a picture"}
           </div>
           {ready ? (
             <button type="button" className="btn pri hide-phone" disabled={!!busy || meshLag || verdict?.ok === false} onClick={() => requestStl()}>
@@ -728,6 +728,9 @@ export default function App() {
                 {exportMb ? ` · ~${exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}` : ""}
                 <button type="button" className="linkish phone-only" disabled={!!busy} onClick={() => void regenerate()}>
                   Regenerate
+                </button>
+                <button type="button" className="linkish phone-only" disabled={!!busy} onClick={newProject}>
+                  New project
                 </button>
               </p>
             </div>
@@ -796,17 +799,16 @@ export default function App() {
                 ) : (
                   <>
                     <h2>Create your 3D relief</h2>
-                    <p>Upload an image to begin. Light areas become the raised carving.</p>
-                    <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
-                      Upload image
-                    </button>
-                    <p className="hint">JPG, PNG, WebP, or BMP. Drag and drop works too.</p>
-                    <p className="hint">
-                      Lettering, names or Quran verses?{" "}
-                      <button type="button" className="linkish" onClick={() => setMode("text")}>
+                    <p>Start from a picture, or type a name, a verse or the 99 Names.</p>
+                    <div className="choice">
+                      <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
+                        Upload image
+                      </button>
+                      <button type="button" className="btn on-dark" onClick={() => setMode("text")} disabled={!!busy}>
                         Make a text panel
                       </button>
-                    </p>
+                    </div>
+                    <p className="hint">Photos: JPG, PNG, WebP, or BMP — drag and drop works too. Text panels: names, Quran verses, the 99 Names.</p>
                   </>
                 )}
               </div>
@@ -888,9 +890,6 @@ export default function App() {
               busy={!!busy}
               built={!!raw?.exact}
               onBuild={() => void buildText()}
-              onRlf={() => void saveTextRelief("rlf")}
-              onTif={() => void saveTextRelief("tif")}
-              onProof={() => void saveProof()}
             />
           ) : null}
           {mode === "photo" ? (
@@ -910,7 +909,7 @@ export default function App() {
             </small>
             {piece === "leg" ? (
               <label className="toggle">
-                <input type="checkbox" checked={turned} onChange={(e) => setTurned(e.target.checked)} />
+                <input type="checkbox" name="turned" checked={turned} onChange={(e) => setTurned(e.target.checked)} />
                 Turned (round) leg: shape from the outline, background cut to 0
               </label>
             ) : null}
@@ -945,6 +944,7 @@ export default function App() {
             </>
           ) : null}
 
+          {mode === "photo" ? (
           <div className="card">
             <h3>Relief</h3>
             <div className="seg" role="group" aria-label="Relief depth">
@@ -961,17 +961,18 @@ export default function App() {
               ))}
             </div>
           </div>
+          ) : null}
 
           {mode === "photo" ? (
             <>
           <div className="card">
             <h3>Image</h3>
             <label className="toggle">
-              <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
+              <input type="checkbox" name="invert" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
               Invert light and dark
             </label>
             <label className="toggle">
-              <input type="checkbox" checked={cutBg} onChange={(e) => setCutBg(e.target.checked)} />
+              <input type="checkbox" name="cut-background" checked={cutBg} onChange={(e) => setCutBg(e.target.checked)} />
               Cut plain background to 0 (when the picture has one)
             </label>
           </div>
@@ -1005,26 +1006,26 @@ export default function App() {
                   <span>
                     Width <em className="nums">{board.widthMm}&nbsp;mm</em>
                   </span>
-                  <input type="number" inputMode="decimal" min={1} value={board.widthMm} onChange={(e) => setSide("widthMm", e.target.value)} />
+                  <input type="number" name="width-mm" autoComplete="off" inputMode="decimal" min={1} value={board.widthMm} onChange={(e) => setSide("widthMm", e.target.value)} />
                 </label>
                 <label className="field">
                   <span>
                     Height <em className="nums">{board.heightMm}&nbsp;mm</em>
                   </span>
-                  <input type="number" inputMode="decimal" min={1} value={board.heightMm} onChange={(e) => setSide("heightMm", e.target.value)} />
+                  <input type="number" name="height-mm" autoComplete="off" inputMode="decimal" min={1} value={board.heightMm} onChange={(e) => setSide("heightMm", e.target.value)} />
                 </label>
               </div>
               <label className="field">
                 <span>
                   Relief depth <em className="nums">{board.depthMm}&nbsp;mm</em>
                 </span>
-                <input type="number" inputMode="decimal" min={0.1} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
+                <input type="number" name="depth-mm" autoComplete="off" inputMode="decimal" min={0.1} step={0.1} value={board.depthMm} onChange={(e) => setNum("depthMm", e.target.value)} />
               </label>
               <label className="field">
                 <span>
                   Base thickness <em className="nums">{board.baseMm}&nbsp;mm</em>
                 </span>
-                <input type="number" inputMode="decimal" min={0} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
+                <input type="number" name="base-mm" autoComplete="off" inputMode="decimal" min={0} step={0.1} value={board.baseMm} onChange={(e) => setNum("baseMm", e.target.value)} />
                 <small>0 = relief surface only, ready for ArtCAM / Aspire. Add a base only for 3D printing.</small>
               </label>
               <label className="field">
@@ -1203,6 +1204,7 @@ export default function App() {
             </div>
           </details>
 
+          {mode === "photo" ? (
           <details className="card gen">
             <summary>Or describe a design</summary>
             <div className="row" style={{ marginTop: 12 }}>
@@ -1226,6 +1228,7 @@ export default function App() {
               </button>
             </div>
           </details>
+          ) : null}
 
           <div className="card">
             {ready ? (
@@ -1250,6 +1253,21 @@ export default function App() {
                   <button type="button" className="btn pri full hide-phone" disabled={!!busy || meshLag || verdict?.ok === false} onClick={() => requestStl()}>
                     {exportLabel}
                   </button>
+                  {raw?.exact ? (
+                    <>
+                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveTextRelief("rlf")}>
+                        ArtCAM relief (.rlf)
+                      </button>
+                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveTextRelief("tif")}>
+                        16-bit TIFF
+                      </button>
+                      <p className="meta">.rlf and TIFF are made at 0.25&nbsp;mm detail, finer than the STL.</p>
+                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveProof()}>
+                        Proof image
+                      </button>
+                      <p className="meta">Check the spelling with someone who reads the script before carving.</p>
+                    </>
+                  ) : null}
                   <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveArtcam()}>
                     Height map for ArtCAM
                   </button>
@@ -1259,7 +1277,13 @@ export default function App() {
             ) : (
               <>
                 <h3>Export</h3>
-                <p className="meta">{pic ? "The relief is building. Download appears here when it is ready." : "Upload an image first. The STL download will appear here."}</p>
+                <p className="meta">
+                  {pic
+                    ? "The relief is building. Download appears here when it is ready."
+                    : mode === "text"
+                      ? "Build the text panel first. The STL, .rlf and TIFF downloads will appear here."
+                      : "Upload an image first. The STL download will appear here."}
+                </p>
               </>
             )}
           </div>
