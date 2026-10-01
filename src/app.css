@@ -452,3 +452,6 @@ details.adv summary { list-style: none } details.gen summary { list-style: none 
 .letter-size { margin: 0; font-size: 13px; color: var(--ink) }
 .letter-size.warn { color: var(--err); background: var(--err-bg); padding: 8px 10px; border-radius: var(--r-sm) }
 .source .meta.warn { color: var(--err); margin-top: 4px }
+.field-err { color: var(--err); font-size: 13px; line-height: 1.4 }
+input[aria-invalid="true"] { border-color: var(--err); box-shadow: 0 0 0 1px var(--err) inset }
+.stale-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: #fbefd9; color: #6b4a14; font-size: 13px; line-height: 1.4 }

@@ -1,4 +1,5 @@
 import {
+  sizeProblem,
   switchTemplate,
   BISMILLAH,
   DEFAULT_SPEC,
@@ -139,4 +140,10 @@ ok(raised.h.every((v) => Number.isFinite(v)), "no NaN in the field");
   const sGrid = switchTemplate({ ...DEFAULT_SPEC, lines: ["a", "b"] }, "grid");
   ok(sGrid.header === "" && sGrid.lines.join() === "a,b", "grid keeps typed words and drops the 99 Names header");
 }
+// ---- panel size limits, shown next to the fields (written before sizeProblem existed)
+ok(sizeProblem(DEFAULT_SPEC) === null, "600 × 600 mm is fine");
+ok(/width/i.test(sizeProblem({ ...DEFAULT_SPEC, widthMm: 5000 }) ?? ""), "5000 mm wide is refused, naming the width");
+ok(/height/i.test(sizeProblem({ ...DEFAULT_SPEC, heightMm: 10 }) ?? ""), "10 mm tall is refused, naming the height");
+ok(/30.*3000/.test(sizeProblem({ ...DEFAULT_SPEC, widthMm: 20 }) ?? ""), "the message gives the allowed range");
+ok(sizeProblem({ ...DEFAULT_SPEC, widthMm: 30, heightMm: 3000 }) === null, "the limits themselves are allowed");
 console.log(`carve textPanel.check OK (${n} assertions)`);

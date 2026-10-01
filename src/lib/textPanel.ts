@@ -80,6 +80,15 @@ export function switchTemplate(spec: PanelSpec, t: Template): PanelSpec {
   return { ...spec, template: t, header: spec.header === BISMILLAH ? "" : spec.header };
 }
 
+export const SIZE_MIN = 30;
+export const SIZE_MAX = 3000;
+/** What is wrong with the panel size, in words for the user, or null. */
+export function sizeProblem(spec: PanelSpec): string | null {
+  for (const [k, v] of [["Width", spec.widthMm], ["Height", spec.heightMm]] as const)
+    if (!(v >= SIZE_MIN && v <= SIZE_MAX)) return `${k} must be between ${SIZE_MIN} and ${SIZE_MAX} mm.`;
+  return null;
+}
+
 export type TextItem = {
   text: string;
   font: FontId;

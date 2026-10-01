@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FONTS, switchTemplate, type FontId, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
+import { FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type FontId, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
 import { SURE, applyHit, search, type Hit, type QuranIndex } from "./lib/quranSearch";
 import { parseAiReply, type Candidate } from "./lib/aiPick";
 
@@ -39,7 +39,10 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
   useEffect(() => {
     void smartSearchEnabled().then(setAi);
   }, []);
+  const latestQ = useRef(q);
+  latestQ.current = q;
   const smart = async () => {
+    const asked = q;
     setAiBusy(true);
     setMsg("");
     try {
@@ -52,6 +55,7 @@ function FindArabic({ spec, setSpec }: { spec: PanelSpec; setSpec: Props["setSpe
       });
       const data = (await r.json()) as { text?: string; error?: string };
       if (!r.ok) throw new Error(data.error || "Smart search failed. Try again.");
+      if (latestQ.current !== asked) return; // the search changed while the AI was answering
       const picks = parseAiReply(data.text ?? "", cands, index);
       setAiHits(picks);
       if (!picks.length) setMsg("Smart search found nothing in the library either.");
@@ -177,12 +181,14 @@ type Props = {
   setSpec: (f: (s: PanelSpec) => PanelSpec) => void;
   busy: boolean;
   built: boolean;
+  /** settings changed since the last build */
+  stale?: boolean;
   /** median letter height of the built panel (0 = not built) */
   letterMm: number;
   onBuild: () => void;
 };
 
-export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild }: Props) {
+export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, stale }: Props) {
   const set = <K extends keyof PanelSpec>(k: K, v: PanelSpec[K]) => setSpec((s) => ({ ...s, [k]: v }));
   const num = (k: "widthMm" | "heightMm" | "columns", raw: string) => {
     const v = Number(raw);
@@ -239,15 +245,20 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild }:
           <span>
             Width <em className="nums">{spec.widthMm}&nbsp;mm</em>
           </span>
-          <input type="number" name="panel-width" autoComplete="off" inputMode="decimal" min={20} value={spec.widthMm} onChange={(e) => num("widthMm", e.target.value)} />
+          <input type="number" name="panel-width" autoComplete="off" inputMode="decimal" min={SIZE_MIN} max={SIZE_MAX} aria-invalid={!(spec.widthMm >= SIZE_MIN && spec.widthMm <= SIZE_MAX)} aria-describedby="size-err" value={spec.widthMm} onChange={(e) => num("widthMm", e.target.value)} />
         </label>
         <label className="field">
           <span>
             Height <em className="nums">{spec.heightMm}&nbsp;mm</em>
           </span>
-          <input type="number" name="panel-height" autoComplete="off" inputMode="decimal" min={20} value={spec.heightMm} onChange={(e) => num("heightMm", e.target.value)} />
+          <input type="number" name="panel-height" autoComplete="off" inputMode="decimal" min={SIZE_MIN} max={SIZE_MAX} aria-invalid={!(spec.heightMm >= SIZE_MIN && spec.heightMm <= SIZE_MAX)} aria-describedby="size-err" value={spec.heightMm} onChange={(e) => num("heightMm", e.target.value)} />
         </label>
       </div>
+      {sizeProblem(spec) ? (
+        <small id="size-err" className="field-err" role="alert">
+          {sizeProblem(spec)}
+        </small>
+      ) : null}
 
       {spec.template === "grid" ? (
         <label className="field">
@@ -296,7 +307,12 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild }:
           {letterMm < 6 ? " — too small to carve cleanly. Make the panel bigger or use fewer words." : "."}
         </p>
       ) : null}
-      <button type="button" className="btn pri" disabled={busy} onClick={onBuild}>
+      {stale ? (
+        <p className="stale-note" role="status">
+          You changed the panel. Rebuild to update the 3D preview and the downloads.
+        </p>
+      ) : null}
+      <button type="button" className="btn pri" disabled={busy || !!sizeProblem(spec)} onClick={onBuild}>
         {built ? "Rebuild text panel" : "Build text panel"}
       </button>
 

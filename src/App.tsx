@@ -10,7 +10,7 @@ import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, 
 import { reliefBmp } from "./lib/bmp";
 import { reliefRlf } from "./lib/rlf";
 import { reliefTif } from "./lib/tif";
-import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, type PanelSpec } from "./lib/textPanel";
+import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, sizeProblem, type PanelSpec } from "./lib/textPanel";
 import { proofPng, rasterPanel } from "./lib/textRaster";
 import { TextPanelCard } from "./TextPanelCard";
 import { artcamNames } from "./lib/names";
@@ -117,6 +117,8 @@ export default function App() {
   } | null>(null);
   const [mode, setMode] = useState<"photo" | "text">("photo");
   const [textSpec, setTextSpec] = useState<PanelSpec>(DEFAULT_SPEC);
+  /** The settings the current 3D relief was built from: downloads use these, not unbuilt edits. */
+  const [builtSpec, setBuiltSpec] = useState<PanelSpec | null>(null);
   const [letterMm, setLetterMm] = useState(0);
   const lastImg = useRef<HTMLImageElement | null>(null);
   const [cutBg, setCutBg] = useState(true);
@@ -540,11 +542,11 @@ export default function App() {
   }
 
   /** Typeset the panel and build the exact relief at `longSide` samples on the long edge. */
-  async function textField(longSide: number) {
-    const lay = layoutPanel(textSpec);
-    const { cols, rows } = gridFor(textSpec.widthMm, textSpec.heightMm, longSide);
+  async function textField(longSide: number, spec: PanelSpec = textSpec) {
+    const lay = layoutPanel(spec);
+    const { cols, rows } = gridFor(spec.widthMm, spec.heightMm, longSide);
     const { masks, ops } = await rasterPanel(lay, cols, rows);
-    const out = composePanel(lay, masks, cols, rows, textSpec.style, textSpec.letterMm);
+    const out = composePanel(lay, masks, cols, rows, spec.style, spec.letterMm);
     const sizes = ops.filter((o) => o.role === "text").map((o) => o.sizeMm).sort((a, b) => a - b);
     const letterMm = sizes.length ? sizes[Math.floor(sizes.length / 2)]! : 0;
     return { ...out, cols, rows, letterMm };
@@ -558,13 +560,14 @@ export default function App() {
       await tick();
       const words = textSpec.template === "names99" ? 1 : textSpec.lines.filter((l) => l.trim()).length;
       if (!words) throw new Error("Type some text first.");
-      for (const [k, v] of [["Width", textSpec.widthMm], ["Height", textSpec.heightMm]] as const)
-        if (!(v >= 30 && v <= 3000)) throw new Error(`${k} must be between 30 and 3000 mm.`);
+      const bad = sizeProblem(textSpec);
+      if (bad) throw new Error(bad);
       const f = await textField(mobile ? 1024 : QUALITY.ultra.field);
       setBusy("Building 3D relief");
       await tick();
       setBoard({ widthMm: textSpec.widthMm, heightMm: textSpec.heightMm, depthMm: f.depthMm, baseMm: 0 });
       setRaw({ height: f.h, alpha: null, depth: null, cols: f.cols, rows: f.rows, invert: false, exact: true });
+      setBuiltSpec(textSpec);
       setLetterMm(f.letterMm);
       setCutPass((n) => n + 1);
       setView((v) => ({ kind: "persp", n: v.n + 1 }));
@@ -581,17 +584,18 @@ export default function App() {
     setErr("");
     setNote("");
     setBusy("Relief");
+    const spec = builtSpec ?? textSpec;
     try {
       await tick();
-      const long = Math.min(4096, Math.round(Math.max(textSpec.widthMm, textSpec.heightMm) / 0.25));
-      const f = await textField(long);
-      const stem = artcamNames(exportSource(), textSpec.widthMm, textSpec.heightMm, f.depthMm, 0).bmp.replace(/\.bmp$/, "");
+      const long = Math.min(4096, Math.round(Math.max(spec.widthMm, spec.heightMm) / 0.25));
+      const f = await textField(long, spec);
+      const stem = artcamNames(exportSource(), spec.widthMm, spec.heightMm, f.depthMm, 0).bmp.replace(/\.bmp$/, "");
       if (kind === "rlf") {
-        const bytes = reliefRlf(f.h, f.cols, f.rows, textSpec.widthMm, textSpec.heightMm, f.depthMm);
+        const bytes = reliefRlf(f.h, f.cols, f.rows, spec.widthMm, spec.heightMm, f.depthMm);
         await saveFile(`${stem}.rlf`, new Blob([bytes as BlobPart], { type: "application/octet-stream" }), "application/octet-stream");
         setNote(`ArtCAM relief downloaded · ${f.cols} × ${f.rows} · ${f.depthMm} mm`);
       } else {
-        const bytes = reliefTif(f.h, f.cols, f.rows, textSpec.widthMm, textSpec.heightMm);
+        const bytes = reliefTif(f.h, f.cols, f.rows, spec.widthMm, spec.heightMm);
         await saveFile(`${stem}.tif`, new Blob([bytes as BlobPart], { type: "image/tiff" }), "image/tiff");
         setNote(`16-bit TIFF downloaded · set the relief height to ${f.depthMm} mm in ArtCAM`);
       }
@@ -606,7 +610,7 @@ export default function App() {
     setErr("");
     try {
       setBusy("Typesetting");
-      const blob = await proofPng(layoutPanel(textSpec));
+      const blob = await proofPng(layoutPanel(builtSpec ?? textSpec));
       await saveFile(`${textSpec.template === "names99" ? "99-names" : "text-panel"}-proof.png`, blob, "image/png");
       setNote("Proof image downloaded. Check every word before carving.");
     } catch (e) {
@@ -919,6 +923,7 @@ export default function App() {
               setSpec={setTextSpec}
               busy={!!busy}
               built={!!raw?.exact}
+              stale={!!raw?.exact && !!builtSpec && JSON.stringify(builtSpec) !== JSON.stringify(textSpec)}
               letterMm={raw?.exact ? letterMm : 0}
               onBuild={() => void buildText()}
             />
