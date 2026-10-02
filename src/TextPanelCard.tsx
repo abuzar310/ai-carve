@@ -213,6 +213,8 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
   return (
     <div className="card text-panel">
       <h3>Text panel</h3>
+      <section className="step" aria-labelledby="step-design">
+      <h4 id="step-design"><b aria-hidden="true">1</b> Design</h4>
       <DesignPicker
         spec={spec}
         setSpec={setSpec}
@@ -223,6 +225,8 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
           if (d.ask === "name") requestAnimationFrame(() => textRef.current?.focus());
         }}
       />
+      <details className="custom-layout adv">
+        <summary>Or start from a blank layout</summary>
       <div className="seg" role="group" aria-label="Layout">
         {TEMPLATES.map((t) => (
           <button
@@ -237,7 +241,11 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
           </button>
         ))}
       </div>
+      </details>
+      </section>
 
+      <section className="step" aria-labelledby="step-text">
+      <h4 id="step-text"><b aria-hidden="true">2</b> Text</h4>
       <FindArabic spec={spec} setSpec={setSpec} />
 
       {spec.template === "names99" ? (
@@ -280,7 +288,11 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         </>
       ) : null}
 
-      <div className="pair">
+      </section>
+
+      <section className="step" aria-labelledby="step-size">
+      <h4 id="step-size"><b aria-hidden="true">3</b> Size</h4>
+      <div className="pair keep">
         <label className="field">
           <span>
             Width <em className="nums">{spec.widthMm}&nbsp;mm</em>
@@ -309,6 +321,10 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         </label>
       ) : null}
 
+      </section>
+
+      <section className="step" aria-labelledby="step-look">
+      <h4 id="step-look"><b aria-hidden="true">4</b> Look</h4>
       {spec.font === "naskh" && spec.template !== "names99" && /[\u0671\u06d6-\u06dc\u06e1]/.test(spec.lines.join(" ")) ? (
         <p className="font-hint" role="note">
           This looks like Quran text. Its marks show best in the Quran script.{" "}
@@ -344,7 +360,7 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         <input type="range" min={0.6} max={4} step={0.1} value={spec.letterMm} onChange={(e) => set("letterMm", Number(e.target.value))} />
       </label>
 
-      <div className="pair">
+      <div className="pair keep">
         <label className="field">
           <span>Frame</span>
           <select
@@ -371,6 +387,9 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         </label>
       </div>
 
+      </section>
+
+      <div className="build-bar">
       {letterMm > 0 ? (
         <p className={"letter-size" + (letterMm < 6 ? " warn" : "")} role="status">
           Letters about <b className="nums">{letterMm < 10 ? letterMm.toFixed(1) : Math.round(letterMm)}&nbsp;mm</b> tall
@@ -385,6 +404,7 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
       <button type="button" className="btn pri" disabled={busy || !!sizeProblem(spec)} onClick={onBuild}>
         {built ? "Rebuild text panel" : "Build text panel"}
       </button>
+      </div>
 
       <small>
         After building, download the STL, .rlf or TIFF from Export. Check the proof image with someone who reads the script before
