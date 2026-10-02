@@ -1655,23 +1655,50 @@ export default function App({ workflow, navKey, example, recent }: Props) {
           <div className="card" hidden={(!ready && !busy && !pic) || (mode === "photo" && panelStep !== "export")}>
             {ready ? (
               <>
-                <p className="ready-title">{verdict?.ok ? "STL valid" : "Check the relief"}</p>
+                <p className="ready-title">{verdict?.ok ? "Ready to export" : "Check the relief"}</p>
                 <p className="export-dim nums">
                   {board.widthMm} × {board.heightMm} × {thickMm}&nbsp;mm
                 </p>
-                <p className="meta nums">
-                  Relief {board.depthMm}&nbsp;mm · {board.baseMm > 0 ? <>Base {board.baseMm}&nbsp;mm</> : "No base (surface only)"}
-                  <br />
-                  {raw?.cols} × {raw?.rows}
-                  <br />
-                  {mesh ? nf.format(mesh.meta.triangleCount) : trisLabel(exportTris)} triangles ·{" "}
-                  {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`}
-                </p>
-                {verdict && !verdict.ok ? <p className="meta">{verdict.errors[0]}</p> : null}
+                <ul className="checks exp-checks">
+                  <li className={verdict?.ok ? "pass" : "fail"}>
+                    <i aria-hidden="true">{verdict?.ok ? "✓" : "✗"}</i>{" "}
+                    {verdict?.ok ? "Mesh checked: a valid solid for CNC and printing" : verdict?.errors[0] || "The mesh did not pass the solid check"}
+                  </li>
+                  <li className={!meshLag ? "pass" : "fail"}>
+                    <i aria-hidden="true">{!meshLag ? "✓" : "✗"}</i>{" "}
+                    {!meshLag ? "Preview matches the settings — exports write exactly this mesh" : "Settings changed — press Regenerate so the export matches"}
+                  </li>
+                  <li className={verdict && Math.abs(verdict.size[0] - board.widthMm) <= 0.05 && Math.abs(verdict.size[1] - board.heightMm) <= 0.05 && Math.abs(verdict.size[2] - thickMm) <= 0.1 ? "pass" : "fail"}>
+                    <i aria-hidden="true">{verdict && Math.abs(verdict.size[0] - board.widthMm) <= 0.05 && Math.abs(verdict.size[1] - board.heightMm) <= 0.05 && Math.abs(verdict.size[2] - thickMm) <= 0.1 ? "✓" : "✗"}</i>{" "}
+                    {verdict
+                      ? `Mesh measures ${Math.round(verdict.size[0] * 100) / 100} × ${Math.round(verdict.size[1] * 100) / 100} × ${Math.round(verdict.size[2] * 100) / 100} mm — matches the settings, in millimetres`
+                      : "Mesh size not measured yet"}
+                  </li>
+                  <li className="pass">
+                    <i aria-hidden="true">✓</i> {mesh ? nf.format(mesh.meta.triangleCount) : trisLabel(exportTris)} triangles ({raw?.cols} × {raw?.rows} height field) ·{" "}
+                    {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`} STL
+                  </li>
+                </ul>
+                {verdict ? (
+                  <details className="tech">
+                    <summary>Technical details</summary>
+                    <ul>
+                      {verdict.errors.map((e) => (
+                        <li key={e} className="tech-err">{e}</li>
+                      ))}
+                      <li>{verdict.checks}</li>
+                      <li className="nums">
+                        {verdict.manifold ? "manifold" : "not manifold"} · {verdict.components} shell{verdict.components === 1 ? "" : "s"} · degenerate {verdict.degenerate}
+                        {verdict.hasBase ? " · base" : " · surface only"}
+                      </li>
+                    </ul>
+                  </details>
+                ) : null}
                 {mobile && raw && raw.cols >= 700 ? (
                   <p className="meta">This preview is the full relief. Saving the STL is easier on a computer.</p>
                 ) : null}
-                <div className="actions" style={{ marginTop: 12 }}>
+                <div className="actions exp-groups" style={{ marginTop: 12 }}>
+                  <h3>CNC files</h3>
                   <button type="button" className="btn pri full hide-phone" disabled={!!busy || meshLag || verdict?.ok === false} onClick={() => requestStl()}>
                     {exportLabel}
                   </button>
@@ -1684,10 +1711,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                         16-bit TIFF
                       </button>
                       <p className="meta">.rlf and TIFF are made at 0.25&nbsp;mm detail, finer than the STL.</p>
-                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveOutline()}>
-                        Cut outline (.dxf)
-                      </button>
-                      <p className="meta">The panel's edge as a vector, for the profile cut{(builtSpec ?? textSpec).shape !== "rect" && ((builtSpec ?? textSpec).template === "plate" || (builtSpec ?? textSpec).template === "pattern") ? " around the arch or oval" : ""}.</p>
+                      <h3>Vectors</h3>
                       <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveVectors("dxf")}>
                         Vectors for V-carve (.dxf)
                       </button>
@@ -1697,16 +1721,27 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                           Also as SVG
                         </button>
                       </p>
-                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveProof()}>
-                        Proof image
+                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveOutline()}>
+                        Cut outline (.dxf)
                       </button>
-                      <p className="meta">Check the spelling with someone who reads the script before carving.</p>
+                      <p className="meta">The panel's edge as a vector, for the profile cut{(builtSpec ?? textSpec).shape !== "rect" && ((builtSpec ?? textSpec).template === "plate" || (builtSpec ?? textSpec).template === "pattern") ? " around the arch or oval" : ""}.</p>
                     </>
                   ) : null}
-                  <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveArtcam()}>
-                    Height map for ArtCAM
-                  </button>
-                  <p className="meta">Optional. Use this only if ArtCAM asks to open an image instead of an STL.</p>
+                  <details className="exp-more">
+                    <summary>More exports</summary>
+                    {raw?.exact ? (
+                      <>
+                        <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveProof()}>
+                          Proof image
+                        </button>
+                        <p className="meta">Check the spelling with someone who reads the script before carving.</p>
+                      </>
+                    ) : null}
+                    <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveArtcam()}>
+                      Height map for ArtCAM
+                    </button>
+                    <p className="meta">Optional. Use this only if ArtCAM asks to open an image instead of an STL.</p>
+                  </details>
                 </div>
               </>
             ) : (

@@ -793,11 +793,21 @@ select.field {
 }
 
 /* ---- 99 Names verification (UX_REBUILD Phase 3) ---- */
-.verify .checks { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px }
-.verify .checks li { display: flex; gap: 8px; align-items: baseline }
-.verify .checks i { font-style: normal; font-weight: 700 }
-.verify .checks li.pass i { color: var(--ok) }
-.verify .checks li.fail { color: var(--err) }
-.verify .checks li.fail i { color: var(--err) }
+.checks { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px }
+.checks li { display: flex; gap: 8px; align-items: baseline }
+.checks i { font-style: normal; font-weight: 700 }
+.checks li.pass i { color: var(--ok) }
+.checks li.fail { color: var(--err) }
+.checks li.fail i { color: var(--err) }
 .verify .proof { display: block; width: 100%; height: auto; margin-top: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff }
 .verify > .btn { margin-top: 2px }
+
+/* ---- Export by purpose + verification (UX_REBUILD Phase 5) ---- */
+.exp-checks { margin-top: 10px }
+.exp-groups h3 { margin: 10px 0 2px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute) }
+.exp-groups h3:first-child { margin-top: 0 }
+details.tech, details.exp-more { margin-top: 8px }
+details.tech summary, details.exp-more summary { cursor: pointer; color: var(--mute); font-weight: 600 }
+details.tech ul { margin: 8px 0 0; padding-left: 18px; color: var(--mute) }
+details.tech ul li.tech-err { color: var(--err) }
+details.exp-more .btn { margin-top: 8px }

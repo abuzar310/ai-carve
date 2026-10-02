@@ -157,6 +157,23 @@ if (want(8)) {
   await p.context().close();
 }
 
+// 9. Export by purpose + verification (UX_REBUILD Phase 5): computed checks, grouped exports
+if (want(9)) {
+  const p = await page(browser);
+  await p.goto(BASE + "/create/text?example=name");
+  let built = false;
+  for (let i = 0; i < 30; i++) { await p.waitForTimeout(1000); if (await p.getByText(/relief is ready/i).count()) { built = true; break; } }
+  check(built, "name example builds for export checks");
+  let four = false;
+  for (let i = 0; i < 8; i++) { if ((await p.locator(".exp-checks li.pass").count()) === 4 && (await p.locator(".exp-checks li.fail").count()) === 0) { four = true; break; } await p.waitForTimeout(600); }
+  check(four, "all four export verification checks pass");
+  const heads = (await p.locator(".exp-groups h3").allInnerTexts()).join(",").toLowerCase();
+  check(heads.includes("cnc files") && heads.includes("vectors"), "exports grouped: CNC files and Vectors");
+  check(await p.locator("details.exp-more summary").isVisible(), "More exports collapsed");
+  check(!p.errors.length, `export step without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);
