@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type FontId, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
+import { FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type Corners, type FontId, type FrameStyle, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
 import { SURE, applyHit, search, type Hit, type QuranIndex } from "./lib/quranSearch";
 import { parseAiReply, type Candidate } from "./lib/aiPick";
 
@@ -315,10 +315,32 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         <input type="range" min={0.6} max={4} step={0.1} value={spec.letterMm} onChange={(e) => set("letterMm", Number(e.target.value))} />
       </label>
 
-      <label className="toggle">
-        <input type="checkbox" checked={spec.frame} onChange={(e) => set("frame", e.target.checked)} />
-        Moulded frame
-      </label>
+      <div className="pair">
+        <label className="field">
+          <span>Frame</span>
+          <select
+            name="panel-frame"
+            value={spec.frame ? spec.frameStyle : "none"}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "none") set("frame", false);
+              else setSpec((s) => ({ ...s, frame: true, frameStyle: v as FrameStyle }));
+            }}
+          >
+            <option value="none">None</option>
+            <option value="classic">Classic moulding</option>
+            <option value="stepped">Stepped double</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Corners</span>
+          <select name="panel-corners" value={spec.template === "plate" && spec.corners === "stars" ? "none" : spec.corners} onChange={(e) => set("corners", e.target.value as Corners)}>
+            <option value="none">None</option>
+            <option value="flowers">Flower spray</option>
+            {spec.template !== "plate" && (spec.template === "names99" || spec.header.trim()) ? <option value="stars">Stars in the header</option> : null}
+          </select>
+        </label>
+      </div>
 
       {letterMm > 0 ? (
         <p className={"letter-size" + (letterMm < 6 ? " warn" : "")} role="status">

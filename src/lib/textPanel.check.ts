@@ -42,7 +42,8 @@ ok(names.tiles.length === 100, `names99 tiles (${names.tiles.length})`);
 const textItems = names.items.filter((i) => i.role === "text");
 ok(textItems.length === 100 && textItems[0]!.text === "الله", "one name per tile, الله first");
 ok(names.items.some((i) => i.role === "header" && i.text === BISMILLAH), "Bismillah header");
-ok(names.stars.length === 2 && names.frameMm > 20, "header stars and a frame on a 600 mm board");
+ok(names.pockets.length === 2 && names.stars.length === 0 && names.frameMm > 20, "flower pockets in the header and a frame on a 600 mm board");
+ok(layoutPanel({ ...DEFAULT_SPEC, corners: "stars" }).stars.length === 2, "stars in the header when chosen");
 const first = names.tiles[0]!;
 const second = names.tiles[1]!;
 ok(first.x0 > second.x0, "tiles run right-to-left");
@@ -110,7 +111,9 @@ function rectMask(lay: Layout, cols: number, rows: number, boxes: { x0: number; 
 }
 const { cols, rows } = gridFor(600, 600, 300);
 ok(cols === 300 && rows === 300, "grid keeps square pixels");
-const lay = layoutPanel(DEFAULT_SPEC);
+// (pinned to the classic frame + stars this section was written for; the 2 mm test grid is too
+// coarse for the stepped frame's tile grooves, which are checked at build resolution below)
+const lay = layoutPanel({ ...DEFAULT_SPEC, frameStyle: "classic", corners: "stars" });
 const strokes = lay.items.filter((i) => i.role === "text").map((i) => {
   const cx = (i.box.x0 + i.box.x1) / 2, cy = (i.box.y0 + i.box.y1) / 2;
   return { x0: cx - 12, y0: cy - 2, x1: cx + 12, y1: cy + 2 };
@@ -128,7 +131,7 @@ ok(at(hs, tcx, t0.y0 + 4) > at(hs, (t0.x0 + lay.tiles[1]!.x1) / 2, tcy) + 0.8, "
 ok(at(hs, 6, 300) > at(hs, tcx, t0.y0 + 4), "frame moulding is the tallest part at the edge");
 const carved = composePanel(lay, masks, cols, rows, "vcarve", 1.8);
 ok(at(carved.heightsMm, tcx, tcy) < at(carved.heightsMm, tcx, t0.y0 + 4) - 1.0, "V-carved letters sink below the tile face");
-const noFrame = composePanel(layoutPanel({ ...DEFAULT_SPEC, frame: false }), masks, cols, rows, "raised", 1.8);
+const noFrame = composePanel(layoutPanel({ ...DEFAULT_SPEC, frameStyle: "classic", corners: "stars", frame: false }), masks, cols, rows, "raised", 1.8);
 ok(noFrame.depthMm < raised.depthMm, "without a frame the relief is shallower");
 ok(raised.h.every((v) => Number.isFinite(v)), "no NaN in the field");
 
@@ -187,3 +190,81 @@ ok(sizeProblem({ ...DEFAULT_SPEC, widthMm: 30, heightMm: 3000 }) === null, "the 
   ok(restoreSpec(JSON.stringify({ ...saved, lines: Array(500).fill("x".repeat(2000)) })).lines.length <= 200, "huge saved text is trimmed");
 }
 console.log(`carve textPanel.check OK (${n} assertions)`);
+
+// ---- frames and corner ornaments
+{
+  const hdr = names.items.find((i) => i.role === "header")!;
+  for (const p of names.pockets) {
+    const reach = p.r;
+    ok(p.sx === 1 ? hdr.box.x0 >= p.cx + reach * 0.99 : hdr.box.x1 <= p.cx - reach * 0.99, "Bismillah stays clear of the corner pockets");
+  }
+  ok(names.arcs.length === 2 && names.arcs.every((a) => a.length > 10), "each pocket is closed by an arc");
+  const noCorners = layoutPanel({ ...DEFAULT_SPEC, corners: "none" });
+  ok(noCorners.pockets.length === 0 && noCorners.stars.length === 0, "no corners: nothing in the header corners");
+  const wideHdr = noCorners.items.find((i) => i.role === "header")!;
+  ok(wideHdr.box.x1 - wideHdr.box.x0 > hdr.box.x1 - hdr.box.x0, "without ornaments the Bismillah may run wider");
+  const stepped = layoutPanel({ ...DEFAULT_SPEC, frameStyle: "stepped" });
+  const classic = layoutPanel({ ...DEFAULT_SPEC, frameStyle: "classic" });
+  ok(stepped.frameMm > classic.frameMm * 1.3, "stepped frame is wider than the classic one");
+
+  // name plates: four corner sprays, and no line of text runs into a pocket
+  for (const [w, hgt, lines] of [
+    [300, 120, ["محمد أبوذر"]],
+    [200, 200, ["ما شاء الله", "تبارك الله"]],
+    [400, 150, ["بسم الله", "Abuzar Firoz", "2026"]],
+  ] as const) {
+    const plate = layoutPanel({ ...DEFAULT_SPEC, template: "plate", widthMm: w, heightMm: hgt, lines: [...lines], header: "", corners: "flowers" });
+    ok(plate.pockets.length === 4 && plate.arcs.length === 4, `${w}×${hgt} plate: four corner pockets`);
+    for (const it of plate.items) {
+      for (const p of plate.pockets) {
+        // the box corner nearest to the pocket's corner must be outside the pocket's disc
+        const nx = p.sx === 1 ? it.box.x0 : it.box.x1;
+        const ny = p.sy === 1 ? it.box.y0 : it.box.y1;
+        const inX = p.sx === 1 ? nx < p.cx + p.r : nx > p.cx - p.r;
+        const inY = p.sy === 1 ? ny < p.cy + p.r : ny > p.cy - p.r;
+        ok(!(inX && inY) || Math.hypot(nx - p.cx, ny - p.cy) >= p.r, `${w}×${hgt}: "${it.text}" clear of the corner flowers`);
+      }
+      ok(it.box.x1 - it.box.x0 > 0.3 * (w - 2 * plate.frameMm), `${w}×${hgt}: "${it.text}" still has room`);
+    }
+  }
+  const plain = layoutPanel({ ...DEFAULT_SPEC, template: "plate", widthMm: 300, heightMm: 120, lines: ["محمد"], header: "", corners: "none" });
+  const flowered = layoutPanel({ ...DEFAULT_SPEC, template: "plate", widthMm: 300, heightMm: 120, lines: ["محمد"], header: "", corners: "flowers" });
+  ok(plain.pockets.length === 0 && flowered.items[0]!.box.x1 - flowered.items[0]!.box.x0 < plain.items[0]!.box.x1 - plain.items[0]!.box.x0, "flowers take room from the line only when chosen");
+  ok(layoutPanel({ ...DEFAULT_SPEC, template: "plate", lines: ["x"], corners: "stars" }).stars.length === 0, "plates have no header, so no header stars");
+
+  // the relief: flowers are carved in the pockets, nothing outside them changes
+  const C2 = 300;
+  const lay2 = layoutPanel(DEFAULT_SPEC);
+  const zero: Masks = { text: new Float32Array(C2 * C2), header: new Float32Array(C2 * C2), stars: new Float32Array(C2 * C2) };
+  const withF = composePanel(lay2, zero, C2, C2, "raised", 1.8).heightsMm;
+  const withoutF = composePanel({ ...lay2, pockets: [] }, zero, C2, C2, "raised", 1.8).heightsMm;
+  const mm = 600 / C2;
+  let inside = 0, outsideChanged = 0;
+  for (let y = 0; y < C2; y++)
+    for (let x = 0; x < C2; x++) {
+      const px = (x + 0.5) * mm, py = (y + 0.5) * mm;
+      const inPocket = lay2.pockets.some((p) => Math.hypot(px - p.cx, py - p.cy) < p.r);
+      const d = withF[y * C2 + x]! - withoutF[y * C2 + x]!;
+      if (inPocket && d > 1) inside++;
+      if (!inPocket && Math.abs(d) > 0.05) outsideChanged++;
+    }
+  ok(inside > 200, `flower sprays raised in the pockets (${inside} cells > 1 mm)`);
+  ok(outsideChanged < 30, `nothing outside the pockets changes (${outsideChanged})`);
+  {
+    // build resolution: the stepped frame's tile grooves reach down to the field
+    const N = 1600, k = 600 / N;
+    const L = layoutPanel(DEFAULT_SPEC);
+    const zz: Masks = { text: new Float32Array(N * N), header: new Float32Array(N * N), stars: new Float32Array(N * N) };
+    const H = composePanel(L, zz, N, N, "raised", 1.8).heightsMm;
+    const a = L.tiles[0]!, b = L.tiles[1]!;
+    const atk = (x: number, y: number) => H[Math.floor(y / k) * N + Math.floor(x / k)]!;
+    const face = atk((a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2);
+    const groove = atk((a.x0 + b.x1) / 2, (a.y0 + a.y1) / 2);
+    ok(face - groove > 1.2, `stepped default: tile face ${face.toFixed(2)} above groove ${groove.toFixed(2)}`);
+  }
+  const old = restoreSpec(JSON.stringify({ template: "names99", frame: true }));
+  ok(old.frameStyle === "stepped" && old.corners === "flowers", "work saved before ornaments gets the new defaults");
+  const badO = restoreSpec(JSON.stringify({ frameStyle: "gothic", corners: "dragons" }));
+  ok(badO.frameStyle === DEFAULT_SPEC.frameStyle && badO.corners === DEFAULT_SPEC.corners, "unknown frame / corner values fall back");
+}
+console.log("carve textPanel.check frames + corners OK");

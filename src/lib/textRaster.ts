@@ -3,6 +3,7 @@
  * Arabic (joining, dots, hamza, madda, tashkeel) on a canvas, and turn what it
  * draws into coverage masks for composePanel.
  */
+import { cornerParts } from "./ornament";
 import { FONTS, fitText, type DrawOp, type FontId, type Layout, type Masks, type Star } from "./textPanel";
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -149,6 +150,22 @@ export async function proofPng(layout: Layout, longSide = 2000): Promise<Blob> {
   ctx.lineWidth = Math.max(1, k * 0.6);
   for (const t of layout.tiles) ctx.strokeRect(t.x0 * k, t.y0 * k, (t.x1 - t.x0) * k, (t.y1 - t.y0) * k);
   for (const b of layout.beads) ctx.strokeRect(b.x0 * k, b.y0 * k, (b.x1 - b.x0) * k, (b.y1 - b.y0) * k);
+  for (const a of layout.arcs) {
+    ctx.beginPath();
+    a.forEach(([x, y], i) => (i ? ctx.lineTo(x * k, y * k) : ctx.moveTo(x * k, y * k)));
+    ctx.stroke();
+  }
+  // corner ornaments: their outlines, so the proof shows where they sit
+  ctx.strokeStyle = "#a88b5f";
+  for (const p of layout.pockets) {
+    for (const part of cornerParts("flowers", p, 1)) {
+      ctx.beginPath();
+      const pts = part.kind === "dome" ? part.poly : part.path;
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * k, y * k) : ctx.moveTo(x * k, y * k)));
+      if (part.kind === "dome") ctx.closePath();
+      ctx.stroke();
+    }
+  }
   ctx.fillStyle = "#1e140a";
   drawOps(ctx, ops, k);
   ctx.fillStyle = "#8a6a3a";

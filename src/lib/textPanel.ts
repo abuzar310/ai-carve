@@ -8,10 +8,14 @@
  * Everything here is pure (no DOM), so it runs in `pnpm check`.
  */
 import { gaussianBlur } from "./relief";
+import { cornerParts, drawParts, drawTube, pocketArc, type Pocket, type Pt } from "./ornament";
 
 export type LetterStyle = "raised" | "vcarve" | "flat";
 export type Template = "plate" | "names99" | "grid";
 export type FontId = "naskh" | "quran";
+export type FrameStyle = "classic" | "stepped";
+/** Corner decoration: "stars" = two rosettes in the header (header templates only). */
+export type Corners = "none" | "stars" | "flowers";
 export type Box = { x0: number; y0: number; x1: number; y1: number };
 
 export const FONTS: Record<FontId, { family: string; url: string; label: string }> = {
@@ -56,6 +60,9 @@ export type PanelSpec = {
   /** Raised height (raised / flat) or V-carve depth of the lettering, mm. */
   letterMm: number;
   frame: boolean;
+  /** Moulding shape when `frame` is on. */
+  frameStyle: FrameStyle;
+  corners: Corners;
   /** grid only */
   columns: number;
 };
@@ -70,6 +77,8 @@ export const DEFAULT_SPEC: PanelSpec = {
   style: "raised",
   letterMm: 1.8,
   frame: true,
+  frameStyle: "stepped",
+  corners: "flowers",
   columns: 4,
 };
 
@@ -122,6 +131,8 @@ export function restoreSpec(saved: string | null): PanelSpec {
     style: pick(o.style, ["raised", "vcarve", "flat"] as const, d.style),
     letterMm: num(o.letterMm, 0.6, 4, d.letterMm),
     frame: typeof o.frame === "boolean" ? o.frame : d.frame,
+    frameStyle: pick(o.frameStyle, ["classic", "stepped"] as const, d.frameStyle),
+    corners: pick(o.corners, ["none", "stars", "flowers"] as const, d.corners),
     columns: Math.round(num(o.columns, 1, 20, d.columns)),
   };
 }
@@ -140,7 +151,12 @@ export type Layout = {
   widthMm: number;
   heightMm: number;
   frameMm: number;
+  frameStyle: FrameStyle;
   beads: Box[];
+  /** Raised lines that are not rectangles (the arcs closing corner pockets). */
+  arcs: Pt[][];
+  /** Corner pockets that hold a flower spray. */
+  pockets: Pocket[];
   tiles: Box[];
   items: TextItem[];
   stars: Star[];
@@ -151,19 +167,77 @@ const inset = (b: Box, d: number): Box => ({ x0: b.x0 + d, y0: b.y0 + d, x1: b.x
 function headerParts(spec: PanelSpec, x0: number, x1: number, y0: number, h: number) {
   const box: Box = { x0, y0, x1, y1: y0 + h };
   const r = Math.min(h * 0.24, (x1 - x0) * 0.045);
-  const stars: Star[] = [
-    { cx: x0 + r * 1.9, cy: y0 + h / 2, r },
-    { cx: x1 - r * 1.9, cy: y0 + h / 2, r },
-  ];
+  let stars: Star[] = [];
+  let pockets: Pocket[] = [];
+  let side = r * 1.2; // text inset from each end
+  if (spec.corners === "stars") {
+    stars = [
+      { cx: x0 + r * 1.9, cy: y0 + h / 2, r },
+      { cx: x1 - r * 1.9, cy: y0 + h / 2, r },
+    ];
+    side = r * 4.2;
+  } else if (spec.corners === "flowers") {
+    // pockets in the two top corners, closed by a quarter arc, as on classic 99 Names boards
+    const pr = Math.min(h * 0.97, (x1 - x0) * 0.17);
+    pockets = [
+      { cx: x0, cy: y0, sx: 1, sy: 1, r: pr },
+      { cx: x1, cy: y0, sx: -1, sy: 1, r: pr },
+    ];
+    side = pr * 1.02;
+  }
   const item: TextItem = {
     text: spec.header,
     font: "quran",
-    box: { x0: x0 + r * 4.2, y0: y0 + h * 0.08, x1: x1 - r * 4.2, y1: y0 + h * 0.92 },
+    box: { x0: x0 + side, y0: y0 + h * 0.08, x1: x1 - side, y1: y0 + h * 0.92 },
     group: "header",
     role: "header",
     allowSplit: false,
   };
-  return { box, stars, item };
+  return { box, stars, pockets, item };
+}
+
+/**
+ * The text box for one plate line. Corner pockets only cut into the top and bottom of the plate,
+ * so a line may give up some height to gain width: try trimming the band from each end and keep
+ * the box that allows the largest letters for this text (estimated, ~0.5 em per character).
+ */
+function lineBox(band: Box, pad: number, pockets: readonly Pocket[], text: string, gap: number): Box {
+  const plain = (y0: number, y1: number): Box => {
+    const side = Math.max(pad, pockets.length ? pocketReach(pockets, y0, y1) + gap : 0);
+    return { x0: band.x0 + side, y0, x1: band.x1 - side, y1 };
+  };
+  const y0 = band.y0 + pad;
+  const y1 = band.y1 - pad;
+  if (!pockets.length) return plain(y0, y1);
+  const em = Math.max(1, [...text].length * 0.5);
+  const words = Math.min(4, text.trim().split(/\s+/).length);
+  const hh = y1 - y0;
+  let best = plain(y0, y1);
+  let bestSize = -1;
+  for (let a = 0; a <= 0.4001; a += 0.05) {
+    for (let c = 0; c <= 0.4001; c += 0.05) {
+      const box = plain(y0 + a * hh, y1 - c * hh);
+      // a long line may wrap (fitText does that): k lines share the height and split the width
+      let size = 0;
+      for (let k = 1; k <= words; k++) size = Math.max(size, Math.min((box.y1 - box.y0) / (1 + 1.35 * (k - 1)), ((box.x1 - box.x0) * k) / em));
+      if (size > bestSize + 1e-9) {
+        bestSize = size;
+        best = box;
+      }
+    }
+  }
+  return best;
+}
+
+/** How far the corner pockets reach into a band [y0, y1] from the left/right edge. */
+function pocketReach(pockets: readonly Pocket[], y0: number, y1: number): number {
+  let reach = 0;
+  for (const p of pockets) {
+    // nearest y of the band to the pocket's corner
+    const dy = p.sy === 1 ? Math.max(0, y0 - p.cy) : Math.max(0, p.cy - y1);
+    if (dy < p.r) reach = Math.max(reach, Math.sqrt(p.r * p.r - dy * dy));
+  }
+  return reach;
 }
 
 /** Rows of tiles right-to-left (Arabic reading order), each row split by its units. */
@@ -185,24 +259,37 @@ export function layoutPanel(spec: PanelSpec): Layout {
   const W = spec.widthMm;
   const H = spec.heightMm;
   const m = Math.min(W, H);
-  const frameMm = spec.frame ? +(0.043 * m).toFixed(2) : 0;
+  const frameMm = spec.frame ? +((spec.frameStyle === "stepped" ? 0.062 : 0.043) * m).toFixed(2) : 0;
   const pad = spec.frame ? 0.012 * m : 0.02 * m;
   const inner: Box = { x0: frameMm + pad, y0: frameMm + pad, x1: W - frameMm - pad, y1: H - frameMm - pad };
   const iw = inner.x1 - inner.x0;
   const ih = inner.y1 - inner.y0;
   const gap = Math.max(0.6, 0.0027 * m);
-  const out: Layout = { widthMm: W, heightMm: H, frameMm, beads: [], tiles: [], items: [], stars: [] };
+  const out: Layout = { widthMm: W, heightMm: H, frameMm, frameStyle: spec.frameStyle, beads: [], arcs: [], pockets: [], tiles: [], items: [], stars: [] };
 
   if (spec.template === "plate") {
     out.beads.push(inner);
+    if (spec.corners === "flowers") {
+      // a flower spray in each corner; keep them small enough to leave room for the name
+      const pr = Math.min(0.38 * Math.min(iw, ih), 0.2 * Math.max(iw, ih));
+      out.pockets = [
+        { cx: inner.x0, cy: inner.y0, sx: 1, sy: 1, r: pr },
+        { cx: inner.x1, cy: inner.y0, sx: -1, sy: 1, r: pr },
+        { cx: inner.x0, cy: inner.y1, sx: 1, sy: -1, r: pr },
+        { cx: inner.x1, cy: inner.y1, sx: -1, sy: -1, r: pr },
+      ];
+      out.arcs = out.pockets.map((p) => pocketArc(p));
+    }
     const lines = spec.lines.map((s) => s.trim()).filter(Boolean);
     const n = Math.max(1, lines.length);
     const lh = ih / n;
     lines.forEach((t, i) => {
+      const band = { x0: inner.x0, y0: inner.y0 + i * lh, x1: inner.x1, y1: inner.y0 + (i + 1) * lh };
+      const pad = Math.min(lh, iw) * 0.08;
       out.items.push({
         text: t,
         font: spec.font,
-        box: inset({ x0: inner.x0, y0: inner.y0 + i * lh, x1: inner.x1, y1: inner.y0 + (i + 1) * lh }, Math.min(lh, iw) * 0.08),
+        box: lineBox(band, pad, out.pockets, t, 0.02 * iw),
         group: `plate${i}`, // each line fills its own row (a name plate mixes sizes)
         role: "text",
         allowSplit: false,
@@ -220,6 +307,8 @@ export function layoutPanel(spec: PanelSpec): Layout {
     const hp = headerParts({ ...spec, header }, inner.x0, inner.x1, inner.y0, hh);
     out.beads.push(hp.box);
     out.stars.push(...hp.stars);
+    out.pockets.push(...hp.pockets);
+    out.arcs.push(...hp.pockets.map((p) => pocketArc(p)));
     out.items.push(hp.item);
     gridTop = inner.y0 + hh + 0.013 * ih;
   }
@@ -422,6 +511,9 @@ function interp(x: number, xs: readonly number[], ys: readonly number[]): number
 
 const FRAME_U = [0, 0.05, 0.12, 0.3, 0.42, 0.58, 0.72, 0.86, 1] as const;
 const FRAME_Z = [4.2, 5.6, 6.0, 7.2, 6.9, 4.6, 4.4, 3.0, 1.0] as const;
+/** Wider double moulding: outer ogee, flat band, a raised inner step, then down to the field. */
+const STEP_U = [0, 0.04, 0.1, 0.2, 0.27, 0.34, 0.5, 0.56, 0.6, 0.7, 0.76, 0.8, 0.9, 1] as const;
+const STEP_Z = [4.4, 5.8, 6.6, 7.4, 7.0, 5.6, 5.6, 6.6, 6.9, 6.6, 5.0, 3.6, 3.2, 1.0] as const;
 const FIELD = 1.0;
 const TILE_RISE = 1.6;
 
@@ -453,7 +545,10 @@ export function composePanel(
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const d = Math.min(x, cols - 1 - x, y, rows - 1 - y) * mmPx;
-        if (d < layout.frameMm) h[y * cols + x] = FIELD + (interp(d / layout.frameMm, FRAME_U, FRAME_Z) - FIELD) * k;
+        if (d < layout.frameMm) {
+          const z = layout.frameStyle === "stepped" ? interp(d / layout.frameMm, STEP_U, STEP_Z) : interp(d / layout.frameMm, FRAME_U, FRAME_Z);
+          h[y * cols + x] = FIELD + (z - FIELD) * k;
+        }
       }
     }
   }
@@ -481,6 +576,9 @@ export function composePanel(
       }
     }
   }
+
+  // arcs closing the corner pockets: the same round bead as the box lines
+  for (const a of layout.arcs) drawTube(h, cols, rows, mmPx, a, FIELD, 1.6 * Math.max(0.6, k), bw * 2);
 
   // tiles: raised faces with a soft bevel
   if (layout.tiles.length) {
@@ -532,6 +630,8 @@ export function composePanel(
   }
   addRounded(masks.header, letterMm * 1.6, Math.max(mmPx * 2, 1.3));
   addRounded(masks.stars, letterMm * 1.2, Math.max(mmPx * 2, 2.5));
+  // corner flower sprays, drawn exactly (heights relative to the field)
+  for (const p of layout.pockets) drawParts(h, cols, rows, mmPx, cornerParts("flowers", p, letterMm * 1.5), FIELD);
 
   const sm = gaussianBlur(h, cols, rows, 0.6);
   let lo = Infinity;
