@@ -84,3 +84,21 @@ const realFetch = globalThis.fetch;
   delete process.env.GEMINI_API_KEY;
 }
 console.log(`carve aiPick.check endpoint OK (${n} assertions)`);
+
+// ---- abuse guard (vibe-sec): other websites refused, loops capped
+{
+  const call = (headers: Record<string, string>) =>
+    new Promise<number>((done) => {
+      const res = { statusCode: 0, setHeader() {}, end() { done(res.statusCode); } };
+      void handler({ method: "POST", body: { q: "rahman", candidates: [] }, headers }, res);
+    });
+  process.env.GEMINI_API_KEY = "";
+  ok((await call({ origin: "https://evil.example", host: "ai-carve.vercel.app", "x-forwarded-for": "9.9.9.1" })) === 403, "another website is refused");
+  ok((await call({ origin: "https://ai-carve.vercel.app", host: "ai-carve.vercel.app", "x-forwarded-for": "9.9.9.2" })) === 503, "own site passes the guard");
+  ok((await call({ origin: "https://ai-carve-git-main-abuzar.vercel.app", host: "x", "x-forwarded-for": "9.9.9.3" })) === 503, "preview deployments pass");
+  let last = 0;
+  for (let i = 0; i < 22; i++) last = await call({ host: "ai-carve.vercel.app", "x-forwarded-for": "9.9.9.4" });
+  ok(last === 429, "more than 20 searches a minute from one visitor are capped");
+  ok((await call({ host: "ai-carve.vercel.app", "x-forwarded-for": "9.9.9.5" })) === 503, "other visitors are not affected");
+  console.log("carve aiPick.check guard OK");
+}
