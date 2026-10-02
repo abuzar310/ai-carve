@@ -197,6 +197,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   const [wireframe, setWireframe] = useState(false);
   const [showBase, setShowBase] = useState(true);
   const [piece, setPiece] = useState<Piece>("panel");
+  const [panelStep, setPanelStep] = useState<"image" | "size" | "relief" | "export">("image");
+  const hadPicRef = useRef(false);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [legDia, setLegDia] = useState(50);
   const [turned, setTurned] = useState(true);
@@ -795,6 +797,12 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     if (!workflow || MODE_OF[workflow] === mode) return;
     navigate(mode === "text" ? WORKFLOW_PATH.text : WORKFLOW_PATH.image, { replace: true });
   }, [mode, workflow]);
+  // a newly added picture moves the side menu to Size; removing it returns to Image (steps stay jumpable)
+  useEffect(() => {
+    if (pic && !hadPicRef.current && wfRef.current !== "trace") setPanelStep("size");
+    if (!pic) setPanelStep("image");
+    hadPicRef.current = !!pic;
+  }, [pic]);
   // Trace workflow: a newly loaded drawing opens the Trace card
   useEffect(() => {
     if (traceImg && wfRef.current === "trace") setTraceOpen((n) => n + 1);
@@ -1008,6 +1016,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
         </div>
       </header>
 
+      {mode === "text" ? (
       <nav className="path" aria-label="Workflow">
         <b className={step === "source" ? "now" : pic ? "did" : ""}>Source</b>
         <span aria-hidden="true">→</span>
@@ -1017,41 +1026,31 @@ export default function App({ workflow, navKey, example, recent }: Props) {
         <span aria-hidden="true">→</span>
         <b className={step === "export" ? "now" : ""}>Export</b>
       </nav>
+      ) : null}
 
-      <main id="workspace" className={"work" + (pic && mode === "photo" ? " has-source" : "")}>
-        {pic && mode === "photo" ? (
-          <aside className="source card" aria-label="Source image">
-            <h2>Source image</h2>
-            <figure>
-              <img src={pic} alt={fileMeta?.name || "Design to carve"} width={fileMeta?.w || 512} height={fileMeta?.h || 512} />
-              <figcaption>
-                <p className="source-name">{fileMeta?.name || "Picture"}</p>
-                <p className="meta nums">
-                  {fileMeta?.size ? bytes(fileMeta.size) : ""}
-                  {fileMeta?.w ? `${fileMeta.size ? " · " : ""}${fileMeta.w} × ${fileMeta.h} px` : ""}
-                </p>
-                {flatPic ? (
-                  <p className="meta warn" role="note">
-                    This picture is almost one flat colour, so the relief will be nearly flat. Use a picture with clear light and dark areas.
-                  </p>
-                ) : null}
-                {fileMeta?.w && Math.max(fileMeta.w, fileMeta.h) < 500 ? (
-                  <p className="meta warn" role="note">
-                    Small picture, so the carving will look soft. Use one at least 800&nbsp;px wide for sharp detail.
-                  </p>
-                ) : null}
-              </figcaption>
-            </figure>
-            <div className="actions two">
-              <button type="button" className="btn ghost" onClick={pickFile} disabled={!!busy}>
-                Replace
+      <main id="workspace" className={"work" + (mode === "photo" ? " stepped" : "")}>
+        {mode === "photo" ? (
+          <nav className="ws-steps" aria-label="Steps">
+            {(
+              [
+                ["image", "Image", !!pic],
+                ["size", "Size", !!pic],
+                ["relief", "Relief", ready],
+                ["export", "Export", false],
+              ] as const
+            ).map(([id, label, done]) => (
+              <button
+                key={id}
+                type="button"
+                aria-current={panelStep === id ? "step" : undefined}
+                className={panelStep === id ? "now" : done ? "did" : ""}
+                onClick={() => setPanelStep(id)}
+              >
+                {label}
+                {done ? <i aria-hidden="true">✓</i> : null}
               </button>
-              <button type="button" className="btn ghost" onClick={clearPic} disabled={!!busy}>
-                Remove
-              </button>
-            </div>
-            <canvas ref={depth} hidden />
-          </aside>
+            ))}
+          </nav>
         ) : null}
 
         <div className="stage">
@@ -1257,6 +1256,40 @@ export default function App({ workflow, navKey, example, recent }: Props) {
               </button>
             </div>
           </div>
+        {pic && mode === "photo" ? (
+          <aside className="source card" hidden={panelStep !== "image"} aria-label="Source image">
+            <h2>Source image</h2>
+            <figure>
+              <img src={pic} alt={fileMeta?.name || "Design to carve"} width={fileMeta?.w || 512} height={fileMeta?.h || 512} />
+              <figcaption>
+                <p className="source-name">{fileMeta?.name || "Picture"}</p>
+                <p className="meta nums">
+                  {fileMeta?.size ? bytes(fileMeta.size) : ""}
+                  {fileMeta?.w ? `${fileMeta.size ? " · " : ""}${fileMeta.w} × ${fileMeta.h} px` : ""}
+                </p>
+                {flatPic ? (
+                  <p className="meta warn" role="note">
+                    This picture is almost one flat colour, so the relief will be nearly flat. Use a picture with clear light and dark areas.
+                  </p>
+                ) : null}
+                {fileMeta?.w && Math.max(fileMeta.w, fileMeta.h) < 500 ? (
+                  <p className="meta warn" role="note">
+                    Small picture, so the carving will look soft. Use one at least 800&nbsp;px wide for sharp detail.
+                  </p>
+                ) : null}
+              </figcaption>
+            </figure>
+            <div className="actions two">
+              <button type="button" className="btn ghost" onClick={pickFile} disabled={!!busy}>
+                Replace
+              </button>
+              <button type="button" className="btn ghost" onClick={clearPic} disabled={!!busy}>
+                Remove
+              </button>
+            </div>
+            <canvas ref={depth} hidden />
+          </aside>
+        ) : null}
           {mode === "text" ? (
             <TextPanelCard
               spec={textSpec}
@@ -1270,7 +1303,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
           ) : null}
           {mode === "photo" && !empty ? (
             <>
-          <div className="card">
+          <div className="card" hidden={panelStep !== "size"}>
             <h3>Piece</h3>
             <div className="seg" role="group" aria-label="Kind of piece">
               {PIECES.map((p) => (
@@ -1321,70 +1354,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
           ) : null}
 
           {mode === "photo" && !empty ? (
-          <div className="card">
-            <h3>Relief</h3>
-            <div className="seg" role="group" aria-label="Relief depth">
-              {RELIEF.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  aria-pressed={reliefKind === r.id}
-                  onClick={() => setBoard((b) => ({ ...b, depthMm: r.depth }))}
-                >
-                  <strong>{r.label}</strong>
-                  <span>{r.hint}</span>
-                </button>
-              ))}
-            </div>
-            <label className="field" style={{ marginTop: 12 }}>
-              <span>
-                Background level <em className="nums">{zeroLevel ? `${Math.round(zeroLevel * 100)}%` : "off"}</em>
-              </span>
-              <input type="range" name="zero-plane" min={0} max={0.6} step={0.01} value={zeroLevel} onChange={(e) => setZeroLevel(Number(e.target.value))} />
-              <small>For bumpy backgrounds: slide right until the background is flat. Too far starts cutting thin parts of the subject — watch the 3D view.</small>
-            </label>
-          </div>
-          ) : null}
-
-          {mode === "photo" && !empty ? (
-            <>
-          <div className="card">
-            <h3>Image</h3>
-            <label className="toggle">
-              <input type="checkbox" name="invert" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
-              Invert light and dark
-            </label>
-            <label className="toggle">
-              <input type="checkbox" name="cut-background" checked={cutBg} onChange={(e) => setCutBg(e.target.checked)} />
-              Cut plain background to 0 (when the picture has one)
-            </label>
-          </div>
-          <TraceCard img={traceImg} name={exportSource()} openSignal={traceOpen} />
-
-            </>
-          ) : null}
-
-          <details className="card adv" hidden={empty}>
-            <summary>Advanced settings</summary>
-            <div className="row" style={{ marginTop: 12 }}>
-              <div>
-                <h3>Resolution</h3>
-                <div className="seg" role="group" aria-label="Resolution">
-                  {(Object.keys(QUALITY) as Quality[]).map((k) => (
-                    <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => startTransition(() => setQuality(k))}>
-                      <strong>{QUALITY[k].label}</strong>
-                      <span>{QUALITY_HINT[k]}</span>
-                    </button>
-                  ))}
-                </div>
-                <p className="meta" style={{ marginTop: 8 }}>
-                  {quality === "high"
-                    ? "1024 across the picture. A smaller photo is placed on that grid. It does not gain new detail."
-                    : quality === "ultra"
-                      ? "Keeps up to 1280 from a picture that is already larger than 1024."
-                      : "Explicit 512 grid. Same solid, smaller file."}
-                </p>
-              </div>
+          <div className="card" hidden={panelStep !== "size"}>
+            <h3>Size</h3>
               <div className="pair">
                 <label className="field">
                   <span>
@@ -1430,6 +1401,71 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                 />
                 <small>Base plus relief. This is the block height in the STL.</small>
               </label>
+            <p className="meta">Width and height follow the picture’s shape: change one and the other follows.</p>
+          </div>
+          ) : null}
+
+          {mode === "photo" && !empty ? (
+          <div className="card" hidden={panelStep !== "relief"}>
+            <h3>Relief</h3>
+            <div className="seg" role="group" aria-label="Relief depth">
+              {RELIEF.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  aria-pressed={reliefKind === r.id}
+                  onClick={() => setBoard((b) => ({ ...b, depthMm: r.depth }))}
+                >
+                  <strong>{r.label}</strong>
+                  <span>{r.hint}</span>
+                </button>
+              ))}
+            </div>
+            <label className="field" style={{ marginTop: 12 }}>
+              <span>
+                Background level <em className="nums">{zeroLevel ? `${Math.round(zeroLevel * 100)}%` : "off"}</em>
+              </span>
+              <input type="range" name="zero-plane" min={0} max={0.6} step={0.01} value={zeroLevel} onChange={(e) => setZeroLevel(Number(e.target.value))} />
+              <small>For bumpy backgrounds: slide right until the background is flat. Too far starts cutting thin parts of the subject — watch the 3D view.</small>
+            </label>
+            <label className="toggle">
+              <input type="checkbox" name="invert" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
+              Invert light and dark
+            </label>
+          </div>
+          ) : null}
+
+          {mode === "photo" && !empty ? (
+          <div hidden={panelStep !== "image"}>
+            <TraceCard img={traceImg} name={exportSource()} openSignal={traceOpen} />
+          </div>
+          ) : null}
+
+          <details className="card adv" hidden={empty || (mode === "photo" && panelStep !== "relief")}>
+            <summary>Advanced settings</summary>
+            <label className="toggle" style={{ marginTop: 12 }}>
+              <input type="checkbox" name="cut-background" checked={cutBg} onChange={(e) => setCutBg(e.target.checked)} />
+              Cut plain background to 0 (when the picture has one)
+            </label>
+            <div className="row" style={{ marginTop: 12 }}>
+              <div>
+                <h3>Resolution</h3>
+                <div className="seg" role="group" aria-label="Resolution">
+                  {(Object.keys(QUALITY) as Quality[]).map((k) => (
+                    <button key={k} type="button" aria-pressed={quality === k} disabled={!!busy} onClick={() => startTransition(() => setQuality(k))}>
+                      <strong>{QUALITY[k].label}</strong>
+                      <span>{QUALITY_HINT[k]}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="meta" style={{ marginTop: 8 }}>
+                  {quality === "high"
+                    ? "1024 across the picture. A smaller photo is placed on that grid. It does not gain new detail."
+                    : quality === "ultra"
+                      ? "Keeps up to 1280 from a picture that is already larger than 1024."
+                      : "Explicit 512 grid. Same solid, smaller file."}
+                </p>
+              </div>
               {raw ? (
                 <p className="meta nums">
                   Depth field {raw.cols} × {raw.rows}
@@ -1589,7 +1625,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
           </details>
 
           {mode === "photo" ? (
-          <details className="card gen">
+          <details className="card gen" hidden={panelStep !== "image"}>
             <summary>Or describe a design</summary>
             <div className="row" style={{ marginTop: 12 }}>
               <label className="field">
@@ -1614,7 +1650,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
           </details>
           ) : null}
 
-          <div className="card" hidden={!ready && !busy && !pic}>
+          <div className="card" hidden={(!ready && !busy && !pic) || (mode === "photo" && panelStep !== "export")}>
             {ready ? (
               <>
                 <p className="ready-title">{verdict?.ok ? "STL valid" : "Check the relief"}</p>

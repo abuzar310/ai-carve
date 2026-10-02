@@ -128,6 +128,23 @@ if (want(6)) {
   await p.context().close();
 }
 
+// 7. Image Relief step workspace (UX_REBUILD Phase 2): picture -> Size, steps jumpable, cards per step
+if (want(7)) {
+  const p = await page(browser);
+  await p.goto(BASE + "/create/image"); await p.waitForTimeout(900);
+  check((await p.locator(".ws-steps button").count()) === 4, "workspace has the 4-step rail");
+  await p.setInputFiles('input[name="source_image"]', "public/examples/carving.jpg");
+  await p.waitForTimeout(1200);
+  check((await p.locator('.ws-steps button[aria-current=\"step\"]').innerText().catch(() => "")).includes("Size"), "a new picture moves the rail to Size");
+  check(await p.locator('h3:has-text(\"Size\")').isVisible(), "Size card shows on the Size step");
+  await p.click('.ws-steps button:has-text(\"Relief\")');
+  check(await p.locator("details.adv:not(.trace)").isVisible(), "Advanced settings show under Relief");
+  await p.click('.ws-steps button:has-text(\"Image\")');
+  check(await p.locator("aside.source").isVisible(), "Source card shows on the Image step");
+  check(!p.errors.length, `stepped workspace without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);
