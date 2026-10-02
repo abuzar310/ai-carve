@@ -199,6 +199,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   const [showBase, setShowBase] = useState(true);
   const [piece, setPiece] = useState<Piece>("panel");
   const [panelStep, setPanelStep] = useState<"image" | "size" | "relief" | "export">("image");
+  const [textQa, setTextQa] = useState<{ inkRatio: number; tightLines: number } | null>(null);
   const hadPicRef = useRef(false);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [legDia, setLegDia] = useState(50);
@@ -652,11 +653,11 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   async function textField(longSide: number, spec: PanelSpec = textSpec) {
     const lay = layoutPanel(spec);
     const { cols, rows } = gridFor(spec.widthMm, spec.heightMm, longSide);
-    const { masks, ops } = await rasterPanel(lay, cols, rows);
+    const { masks, ops, inkRatio, tightLines } = await rasterPanel(lay, cols, rows);
     const out = composePanel(lay, masks, cols, rows, spec.style, spec.letterMm);
     const sizes = ops.filter((o) => o.role === "text").map((o) => o.inkMm ?? o.sizeMm * 0.75).sort((a, b) => a - b);
     const letterMm = sizes.length ? sizes[Math.floor(sizes.length / 2)]! : 0;
-    return { ...out, cols, rows, letterMm };
+    return { ...out, cols, rows, letterMm, inkRatio, tightLines };
   }
 
   /**
@@ -845,6 +846,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
       }
       revealResult();
       setLetterMm(f.letterMm);
+      setTextQa({ inkRatio: f.inkRatio, tightLines: f.tightLines });
       setCutPass((n) => n + 1);
       setView((v) => ({ kind: "persp", n: v.n + 1 }));
       setBusy("Preparing preview");
@@ -1676,6 +1678,14 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                       ? `Mesh measures ${Math.round(verdict.size[0] * 100) / 100} × ${Math.round(verdict.size[1] * 100) / 100} × ${Math.round(verdict.size[2] * 100) / 100} mm — matches the settings, in millimetres`
                       : "Mesh size not measured yet"}
                   </li>
+                  {raw?.exact && textQa ? (
+                    <li className={textQa.tightLines === 0 ? "pass" : "fail"}>
+                      <i aria-hidden="true">{textQa.tightLines === 0 ? "✓" : "✗"}</i>{" "}
+                      {textQa.tightLines === 0
+                        ? "Clear space between lines — no vowel marks touch the next line"
+                        : `${textQa.tightLines} line gap${textQa.tightLines === 1 ? " has" : "s have"} touching vowel marks — make the panel taller, use fewer lines, or turn the header off`}
+                    </li>
+                  ) : null}
                   <li className="pass">
                     <i aria-hidden="true">✓</i> {mesh ? nf.format(mesh.meta.triangleCount) : trisLabel(exportTris)} triangles ({raw?.cols} × {raw?.rows} height field) ·{" "}
                     {exportMb < 1 ? `${Math.round(exportMb * 1000)}\u00a0KB` : `${nf1.format(exportMb)}\u00a0MB`} STL
@@ -1689,6 +1699,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                         <li key={e} className="tech-err">{e}</li>
                       ))}
                       <li>{verdict.checks}</li>
+                      {raw?.exact && textQa ? <li className="nums">lettering ink {Math.round(textQa.inkRatio * 100) / 100}× the typeset estimate</li> : null}
                       <li className="nums">
                         {verdict.manifold ? "manifold" : "not manifold"} · {verdict.components} shell{verdict.components === 1 ? "" : "s"} · degenerate {verdict.degenerate}
                         {verdict.hasBase ? " · base" : " · surface only"}

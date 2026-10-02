@@ -51,6 +51,13 @@ sandbox add `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers LOCAL_ORT=1`.
 Sandbox: Chromium in `/opt/pw-browsers`; HF/CDN/Vercel blocked (serve ORT wasm via page.route).
 Always load the built page in a browser before pushing: a use-before-define in App.tsx once crashed the whole page while tsc and all unit tests passed.
 Use `node scripts/qa/static-run.mjs` (in-process static server + smoke in ONE node process, honors ONLY=n) in sandboxes. JSX text does NOT process \\uXXXX escapes - write real characters or they render literally (caught by screenshot once).
+Field report (a customer STL, 3 Oct): a plate with header + two fully voweled Bismillah lines
+looks like 'overwritten type' because fitText sizes lines by bare-alif height, so tashkeel from
+adjacent lines interleaves. The file itself was valid and matched its spec (two lines at the two
+band sizes); the collision is real on the carved piece. Guard shipped: rasterPanel measures each
+line's FULL ink (marks included) and returns tightLines + inkRatio; the export verification shows
+'touching vowel marks' in red with the fix choices. A root redesign (mark-aware caps / line pitch)
+would change approved designs' look - owner's call, see UX_REBUILD open items.
 Sandbox quirk (cost half a session): chromium + `vite preview` together get killed by a resource
 ceiling with NO output. Fix: serve `dist/` from a tiny in-process node http server with SPA fallback
 in the SAME process as Playwright (one node process), or run `smoke.mjs` in chunks with `ONLY=n`.

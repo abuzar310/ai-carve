@@ -99,7 +99,7 @@ async function fontsFor(layout: Layout): Promise<void> {
   await Promise.all([...ids].map(loadFont));
 }
 
-export async function rasterPanel(layout: Layout, cols: number, rows: number): Promise<{ masks: Masks; ops: DrawOp[] }> {
+export async function rasterPanel(layout: Layout, cols: number, rows: number): Promise<{ masks: Masks; ops: DrawOp[]; inkRatio: number; tightLines: number }> {
   await fontsFor(layout);
   const ss = cols * rows * 4 <= 16_000_000 ? 2 : 1;
   const W = cols * ss;
@@ -128,7 +128,28 @@ export async function rasterPanel(layout: Layout, cols: number, rows: number): P
   const text = pass(() => drawOps(ctx, ops.filter((o) => o.role === "text"), pxmm));
   const header = pass(() => drawOps(ctx, ops.filter((o) => o.role === "header"), pxmm));
   const stars = pass(() => drawStars(ctx, layout.stars, pxmm));
-  return { masks: { text, header, stars }, ops };
+  // Honest tripwire: the drawn ink area vs what the typeset ops predict. Text layered more than
+  // once (a double-build, a stale async write) roughly multiplies this ratio; see NamesVerify.
+  let expectedMm2 = 0;
+  for (const o of ops) if (o.role === "text") expectedMm2 += measure(o.text, o.font, o.sizeMm) * (o.inkMm ?? o.sizeMm * 0.75);
+  let inkMm2 = 0;
+  const cell = (layout.widthMm / cols) * (layout.heightMm / rows);
+  for (let i = 0; i < text.length; i++) inkMm2 += text[i]!;
+  inkMm2 *= cell;
+  const inkRatio = expectedMm2 > 0 ? inkMm2 / expectedMm2 : 0;
+  // Lines whose FULL ink (vowel marks included) touches the neighbouring line's ink.
+  // fitText sizes lines by letter height alone, so fully voweled lines can collide: count it honestly.
+  const spans = ops
+    .filter((o) => o.role === "text")
+    .map((o) => {
+      ctx.font = fontCss(o.font, o.sizeMm * pxmm);
+      const m = ctx.measureText(o.text);
+      return { top: o.baseline - (m.actualBoundingBoxAscent ?? 0) / pxmm, bot: o.baseline + (m.actualBoundingBoxDescent ?? 0) / pxmm, cx: o.cx };
+    })
+    .sort((a, b) => a.top - b.top);
+  let tightLines = 0;
+  for (let i = 1; i < spans.length; i++) if (spans[i - 1]!.bot - spans[i]!.top > 0.2) tightLines++;
+  return { masks: { text, header, stars }, ops, inkRatio, tightLines };
 }
 
 /** Flat black-on-white proof of the exact lettering, for checking spelling before carving. */

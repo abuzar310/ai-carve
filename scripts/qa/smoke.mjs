@@ -164,7 +164,7 @@ if (want(9)) {
   for (let i = 0; i < 30; i++) { await p.waitForTimeout(1000); if (await p.getByText(/relief is ready/i).count()) { built = true; break; } }
   check(built, "name example builds for export checks");
   let four = false;
-  for (let i = 0; i < 8; i++) { if ((await p.locator(".exp-checks li.pass").count()) === 4 && (await p.locator(".exp-checks li.fail").count()) === 0) { four = true; break; } await p.waitForTimeout(600); }
+  for (let i = 0; i < 8; i++) { if ((await p.locator(".exp-checks li.pass").count()) >= 4 && (await p.locator(".exp-checks li.fail").count()) === 0) { four = true; break; } await p.waitForTimeout(600); }
   check(four, "all four export verification checks pass");
   const heads = (await p.locator(".exp-groups h3").allInnerTexts()).join(",").toLowerCase();
   check(heads.includes("cnc files") && heads.includes("vectors"), "exports grouped: CNC files and Vectors");
@@ -211,6 +211,31 @@ if (want(11)) {
   await p.goto(BASE + "/project/2000"); await p.waitForTimeout(1200);
   check(p.url().includes("/create/text") && !p.errors.length, `project link opens the workspace ${p.errors.join(" | ")}`);
   await ctx.close();
+}
+
+// 12. Line-clearance verification (full ink incl. vowel marks): fires on a cramped two-line
+// Bismillah panel, stays green on a clean single-line build
+if (want(12)) {
+  const SPEC_TIGHT = JSON.stringify({ template: "plate", widthMm: 300, heightMm: 120, font: "quran", style: "raised", letterMm: 1.8, frame: true, frameStyle: "stepped", corners: "flowers", footer: "", sections: false, columns: 4, pattern: "star8", repeats: 3, band: "double", medallion: "none", shape: "rect",
+    header: "\u0628\u0650\u0633\u0652\u0645\u0650 \u0671\u0644\u0644\u064e\u0651\u0647\u0650 \u0671\u0644\u0631\u064e\u0651\u062d\u0652\u0645\u064e\u0670\u0646\u0650 \u0671\u0644\u0631\u064e\u0651\u062d\u0650\u064a\u0645\u0650",
+    lines: ["\u0628\u0650\u0633\u0652\u0645\u0650 \u0671\u0644\u0644\u064e\u0651\u0647\u0650 \u0671\u0644\u0631\u064e\u0651\u062d\u0652\u0645\u064e\u0670\u0646\u0650 \u0671\u0644\u0631\u064e\u0651\u062d\u0650\u064a\u0645\u0650", "\u0628\u0650\u0633\u0652\u0645\u0650 \u0671\u0644\u0644\u064e\u0651\u0647\u0650 \u0671\u0644\u0631\u064e\u0651\u062d\u0652\u0645\u064e\u0670\u0646\u0650 \u0671\u0644\u0631\u064e\u0651\u062d\u0650\u064a\u0645\u0650"] });
+  const ctx = await browser.newContext();
+  await ctx.addInitScript((sp) => { localStorage.setItem("carve.textSpec.v1", sp); localStorage.setItem("carve.mode", "text"); }, SPEC_TIGHT);
+  const p = await ctx.newPage();
+  p.errors = []; p.on("pageerror", (e) => p.errors.push(e.message));
+  await p.goto(BASE + "/create/text"); await p.waitForTimeout(1200);
+  await p.getByRole("button", { name: /Build text panel/ }).last().click();
+  for (let i = 0; i < 28; i++) { await p.waitForTimeout(1000); if (await p.getByText(/relief is ready/i).count()) break; }
+  const li = p.locator(".exp-checks li", { hasText: /vowel marks/ }).first();
+  check((await li.getAttribute("class")) === "fail", "cramped two-line panel: touching vowel marks flagged red");
+  check(!p.errors.length, `line-clearance check without errors ${p.errors.join(" | ")}`);
+  await ctx.close();
+  const p2 = await page(browser);
+  await p2.goto(BASE + "/create/text?example=name");
+  for (let i = 0; i < 28; i++) { await p2.waitForTimeout(1000); if (await p2.getByText(/relief is ready/i).count()) break; }
+  const li2 = p2.locator(".exp-checks li", { hasText: /Clear space between lines/ }).first();
+  check((await li2.getAttribute("class")) === "pass", "clean build: line clearance green");
+  await p2.context().close();
 }
 
 await browser.close();
