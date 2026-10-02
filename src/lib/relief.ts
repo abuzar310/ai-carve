@@ -22,6 +22,13 @@ export type ReliefInput = {
 export type ReliefOpts = {
   /** 0..1 share of height given to fine picture detail. */
   detail?: number;
+  /**
+   * Where `depth` came from. "relief" = AI Carve's relief-trained model, which already outputs
+   * carving height with a flat background, so the picture is used only lightly: the background is
+   * cut from the depth itself (wood grain can't fool it), no equalising, and fine detail is kept
+   * small and on the subject only. "general" (default) = a distance model; the full clean-up runs.
+   */
+  depthKind?: "relief" | "general";
   /** 0..4 extra smoothing of the form. */
   smooth?: number;
   /** 0..1 how much the depth histogram is spread out (bas-relief compression). */
@@ -408,13 +415,16 @@ export function turnedForm(mask: Uint8Array, cols: number, rows: number): Float3
   return out;
 }
 
+/** With a relief-trained model, the picture's fine detail gets this share of the usual weight. */
+export const RELIEF_DETAIL_SHARE = 0.3;
+
 export function composeRelief(input: ReliefInput, opts: ReliefOpts = {}): Float32Array {
   const { luma, depth, cols, rows } = input;
   const n = cols * rows;
   if (luma.length < n) throw new Error("luma short");
   if (depth && depth.length < n) throw new Error("depth short");
   const s = Math.max(cols, rows) / 1024;
-  const detailW = Math.min(0.6, Math.max(0, opts.detail ?? 0.35));
+  const detailW = Math.min(0.6, Math.max(0, opts.detail ?? 0.35)) * (opts.depthKind === "relief" && depth ? RELIEF_DETAIL_SHARE : 1);
   const smooth = Math.max(0, Math.min(4, opts.smooth ?? 0));
   const clean = Math.min(1, Math.max(0, opts.clean ?? 0.5));
 
@@ -424,7 +434,14 @@ export function composeRelief(input: ReliefInput, opts: ReliefOpts = {}): Float3
   // MASK: turned legs always need their outline; other pieces cut a plain background.
   const cut = opts.cutBackground ?? "auto";
   const legMask = opts.turned ? silhouette(luma, cols, rows, input.alpha) : null;
-  const subject = legMask ?? (cut === false ? null : backgroundMask(luma, cols, rows, input.alpha));
+  const reliefDepth = !!depth && opts.depthKind === "relief" && !opts.turned;
+  const subject =
+    legMask ??
+    (cut === false
+      ? null
+      : reliefDepth
+        ? (input.alpha ? backgroundMask(luma, cols, rows, input.alpha) : backgroundMask(depth, cols, rows, null, 0.05))
+        : backgroundMask(luma, cols, rows, input.alpha));
 
   // FORM
   let form: Float32Array;
@@ -432,7 +449,8 @@ export function composeRelief(input: ReliefInput, opts: ReliefOpts = {}): Float3
     form = gaussianBlur(turnedForm(legMask, cols, rows), cols, rows, 0.6 + smooth);
   } else {
     let formSrc: Float32Array;
-    if (depth) formSrc = guidedFilter(structure, depth, cols, rows, 6 * s, 1e-3);
+    if (depth && reliefDepth) formSrc = depth;
+    else if (depth) formSrc = guidedFilter(structure, depth, cols, rows, 6 * s, 1e-3);
     else formSrc = structure;
     const formSigma = (depth ? 1 : 10) * s + smooth * 2 * s;
     form = gaussianBlur(formSrc, cols, rows, formSigma);
@@ -448,7 +466,7 @@ export function composeRelief(input: ReliefInput, opts: ReliefOpts = {}): Float3
     } else {
       form = robustNormalize(form);
     }
-    form = equalizeMix(form, opts.equalize ?? (depth ? 0.35 : 0));
+    form = equalizeMix(form, opts.equalize ?? (reliefDepth ? 0 : depth ? 0.35 : 0));
   }
 
   // DETAIL: band-pass of the cleaned picture. Coarse blur removes lighting gradients.
@@ -473,9 +491,10 @@ export function composeRelief(input: ReliefInput, opts: ReliefOpts = {}): Float3
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const det = Math.tanh((band[i]! - mean) / (2.5 * sd)); // soft clip to −1..1
-    if (subject) {
-      // Detail rides on the form (scaled by it) so it fades out at the outline.
-      out[i] = subject[i] ? form[i]! * (1 - detailW * 0.5 + det * detailW * 0.5) : 0;
+    if (subject || (reliefDepth && !subject)) {
+      // Detail rides on the form (scaled by it) so it fades out at the outline,
+      // and a relief model's flat background gets no picture texture.
+      out[i] = !subject || subject[i] ? form[i]! * (1 - detailW * 0.5 + det * detailW * 0.5) : 0;
     } else {
       out[i] = form[i]! * (1 - detailW) + (0.5 + 0.5 * det) * detailW;
     }

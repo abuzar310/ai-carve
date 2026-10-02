@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, useTransition } f
 import { heightToImageData, rasterFromImage } from "./lib/height";
 import { applyContrast } from "./lib/refine";
 import { composeRelief, silhouette } from "./lib/relief";
-import { estimateDepth } from "./lib/depth";
+import { activeDepthModel, estimateDepth } from "./lib/depth";
 import { PIECES, boardForPiece, circumferenceMm, detectPiece, type Piece } from "./lib/piece";
 import { QUALITY, buildRelief, constrainedPreview, fieldCols, isSurfaceOnly, restampRelief, triangleEstimate, type Quality, type ReliefMesh } from "./lib/mesh";
 import { writeStlAsync } from "./lib/stl";
@@ -112,6 +112,8 @@ export default function App() {
     cols: number;
     rows: number;
     invert: boolean;
+    /** Which model made `depth`: the relief-trained one needs much less picture clean-up. */
+    depthKind?: "relief" | "general";
     /** Text panels: the field is already the exact relief, so no depth / clean-up passes. */
     exact?: boolean;
   } | null>(null);
@@ -226,7 +228,7 @@ export default function App() {
       if (!dep) setNote((n) => (n ? n + " " : "") + "Depth model unavailable: relief uses picture brightness only.");
     }
     setBusy("Building 3D relief");
-    setRaw({ height: next.height, alpha: next.alpha, depth: dep, cols: next.cols, rows: next.rows, invert });
+    setRaw({ height: next.height, alpha: next.alpha, depth: dep, depthKind: dep ? activeDepthModel ?? "general" : undefined, cols: next.cols, rows: next.rows, invert });
     setCutPass((n) => n + 1);
     setView((v) => ({ kind: "persp", n: v.n + 1 }));
     setBusy("Preparing preview");
@@ -261,6 +263,7 @@ export default function App() {
         detail: fieldOpts.detail,
         turned: turnedOn,
         cutBackground: cutBg ? "auto" : false,
+        depthKind: raw.depthKind,
       },
     );
     // A turned leg keeps its background at exactly 0, so contrast is not applied to it.
@@ -278,7 +281,7 @@ export default function App() {
       let dep = await estimateDepth(img, img.naturalWidth || img.width, img.naturalHeight || img.height, r.cols, r.rows, (s) => setBusy(s));
       if (dep && r.invert) dep = dep.map((v) => 1 - v);
       if (!dep) setNote("Depth model unavailable: relief uses picture brightness only.");
-      if (live) setRaw((cur) => (cur === r ? { ...r, depth: dep ?? null } : cur));
+      if (live) setRaw((cur) => (cur === r ? { ...r, depth: dep ?? null, depthKind: dep ? activeDepthModel ?? "general" : undefined } : cur));
       setBusy("");
     })();
     return () => {

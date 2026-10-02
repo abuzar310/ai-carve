@@ -123,6 +123,36 @@ ok(snapped[32 * N + 33]! - snapped[32 * N + 30]! > soft[32 * N + 33]! - soft[32 
   ok(keep.every((v) => v >= 0 && v <= 1), "cut off still valid");
 }
 
+// Relief-trained depth: wood grain on the background must not be carved, and the background
+// is cut from the depth (flat), not from picture colour. A distance model keeps the old path.
+{
+  const C = 96;
+  const luma = new Float32Array(C * C);
+  const depth = new Float32Array(C * C);
+  for (let y = 0; y < C; y++)
+    for (let x = 0; x < C; x++) {
+      const i = y * C + x;
+      const inFlower = Math.hypot(x - 48, y - 48) < 20;
+      luma[i] = 0.45 + 0.18 * Math.sin(y * 0.9 + Math.sin(x * 0.15) * 2); // strong wood grain everywhere
+      depth[i] = inFlower ? 0.4 + 0.6 * Math.cos((Math.hypot(x - 48, y - 48) / 20) * (Math.PI / 2)) : 0.02;
+    }
+  const h = composeRelief({ luma, depth, cols: C, rows: C }, { depthKind: "relief" });
+  let bgMax = 0;
+  for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) if (Math.hypot(x - 48, y - 48) > 26) bgMax = Math.max(bgMax, h[y * C + x]!);
+  ok(bgMax === 0, `relief model: grained background stays flat (max ${bgMax.toFixed(3)})`);
+  ok(h[48 * C + 48]! > 0.8 && h[48 * C + 48 + 15]! > 0.1, "relief model: subject raised, dome kept");
+  let worst = 0; // inside the subject the grain may add only a little texture
+  for (let y = 40; y < 56; y++) for (let x = 40; x < 56; x++) worst = Math.max(worst, Math.abs(h[y * C + x]! - h[y * C + x + 1]!));
+  ok(worst < 0.06, `relief model: little grain on the subject (step ${worst.toFixed(3)})`);
+  const keep = composeRelief({ luma, depth, cols: C, rows: C }, { depthKind: "relief", cutBackground: false });
+  let bgSpread = 0;
+  for (let y = 0; y < 12; y++) for (let x = 0; x < C; x++) bgSpread = Math.max(bgSpread, keep[y * C + x]!);
+  ok(bgSpread < 0.05, `relief model, cut off: background still smooth (max ${bgSpread.toFixed(3)})`);
+  const general = composeRelief({ luma, depth, cols: C, rows: C });
+  const generalAgain = composeRelief({ luma, depth, cols: C, rows: C }, { depthKind: "general" });
+  ok(general.every((v, i) => v === generalAgain[i]), "default is the general-model path");
+}
+
 // Degenerate pictures must not crash or produce NaN.
 {
   const C = 32;
