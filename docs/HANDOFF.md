@@ -22,6 +22,7 @@ Latest `main`: `3c627ff`. Customers mostly order **name / text plaques**.
 ## Verify (the gate before every push)
 `pnpm check` (24 suites) · `npx tsc --noEmit` · `pnpm build` · Playwright on a 390 px phone.
 Sandbox: Chromium in `/opt/pw-browsers`; HF/CDN/Vercel blocked (serve ORT wasm via page.route).
+Always load the built page in a browser before pushing: a use-before-define in App.tsx once crashed the whole page while tsc and all unit tests passed.
 Playwright quirk: the sticky Build bar blocks `locator.click()` on phones — scroll to centre and use
 `page.mouse.click`. Background servers die between tool calls: start `vite preview` in the same command.
 
@@ -56,7 +57,7 @@ ornaments, ArtCAM .rlf + 16-bit TIFF + layered vectors, runs in the browser (pri
 4. **Photo prep** — 4-corner perspective straighten and crop (photos of carvings taken at an angle);
    auto "cut background" off when the picture has a frame (the user's 99 Names photo).
 5. ~~Recent projects~~ DONE: Recent tab in the design picker (`lib/recent.ts`, localStorage `carve.recent.v1`, last 12 builds).
-6. **Material preview** — wood / marble / stone look in the 3D view, for showing clients.
+6. ~~Material preview~~ DONE: Material picker in the 3D view chips (`lib/material.ts`: teak, walnut, rosewood, marble, sandstone, brass).
 7. **UI languages** — Urdu, Arabic, Hindi (market: India / Middle East).
 From Carveco research: ~~background level (zero plane)~~ DONE (Relief card slider, `zeroPlane` in relief.ts); ArtCAM PAF
 licences expire through 2026 — market AI Carve's .rlf export to ArtCAM shops. Carveco's Weave tool → DONE as the "Woven" band style (`weaveFull` + `drawWoven` in pattern.ts).

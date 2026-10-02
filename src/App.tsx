@@ -18,6 +18,7 @@ import { letterOutlines, vectorsDxf, vectorsSvg, type VectorLayer } from "./lib/
 import { TextPanelCard } from "./TextPanelCard";
 import { TraceCard } from "./TraceCard";
 import { RECENT_KEY, addRecent, parseRecent } from "./lib/recent";
+import { MATERIALS, type MaterialId } from "./lib/material";
 import { applyDesign, designById, resolveSrc } from "./lib/designs";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
@@ -139,6 +140,17 @@ export default function App() {
       return null;
     }
   };
+  const [material, setMaterial] = useState<MaterialId>(() => {
+    const m = stored("carve.material");
+    return MATERIALS.some((x) => x.id === m) ? (m as MaterialId) : "classic";
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("carve.material", material);
+    } catch {
+      /* private mode */
+    }
+  }, [material]);
   const [mode, setMode] = useState<"photo" | "text">(() => (stored("carve.mode") === "text" ? "text" : "photo"));
   const [textSpec, setTextSpec] = useState<PanelSpec>(() => restoreSpec(stored("carve.textSpec.v1")));
   useEffect(() => {
@@ -992,7 +1004,7 @@ export default function App() {
         >
           {mesh ? (
             <Suspense fallback={<div className="gl ph">Loading 3D preview…</div>}>
-              <ReliefPreview key={cutPass} source={meshRef} rev={rev} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} />
+              <ReliefPreview key={cutPass} source={meshRef} rev={rev} wireframe={wireframe} showBase={showBase} tint={tint} view={view.kind} viewTick={view.n} material={material} />
             </Suspense>
           ) : pic && mode === "photo" ? (
             <div className="drop">
@@ -1122,6 +1134,16 @@ export default function App() {
             <button type="button" className="chip" onClick={() => void toggleFull()}>
               Fullscreen
             </button>
+            <label className="chip chip-select">
+              <span className="sr-only">Material</span>
+              <select name="material" value={material} onChange={(e) => setMaterial(e.target.value as MaterialId)} aria-label="Preview material">
+                {MATERIALS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id === "classic" ? "Material: height tint" : `Material: ${m.label}`}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         ) : null}
         </div>

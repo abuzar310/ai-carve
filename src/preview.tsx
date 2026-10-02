@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { MATERIALS, materialColors, type MaterialId } from "./lib/material";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { ReliefMesh } from "./lib/mesh";
 
@@ -29,12 +30,15 @@ export function ReliefPreview({
   tint,
   view,
   viewTick,
+  material = "classic",
 }: {
   source: { current: ReliefMesh | null };
   rev: number;
   wireframe: boolean;
   showBase: boolean;
   tint: boolean;
+  /** how the surface looks: height tint, or wood / stone / metal */
+  material?: MaterialId;
   view: View;
   viewTick: number;
 }) {
@@ -272,7 +276,15 @@ export function ReliefPreview({
     if (!a) return;
     const mesh = source.current;
     if (!mesh) return;
-    const colors = heightColors(mesh, tint);
+    const n = mesh.positions.length / 3;
+    const colors =
+      material === "classic"
+        ? heightColors(mesh, tint)
+        : materialColors(mesh.positions, n, n / 2, mesh.meta.topZMin, mesh.meta.topZMax - mesh.meta.topZMin, material);
+    const finish = MATERIALS.find((m) => m.id === material) ?? MATERIALS[0]!;
+    a.mat.roughness = finish.roughness;
+    a.mat.metalness = finish.metalness;
+    a.mat.needsUpdate = true;
     const prev = a.geo.getAttribute("color");
     if (prev && prev.array.length === colors.length) {
       (prev.array as Float32Array).set(colors);
@@ -281,7 +293,7 @@ export function ReliefPreview({
       a.geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     }
     a.paint();
-  }, [tint, rev, source]);
+  }, [tint, rev, source, material]);
 
   useEffect(() => {
     const a = api.current;
