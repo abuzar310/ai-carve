@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type Corners, type FontId, type FrameStyle, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
+import { DesignPicker } from "./DesignPicker";
+import { DEFAULT_SPEC, FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type Corners, type FontId, type FrameStyle, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
 import { SURE, applyHit, search, type Hit, type QuranIndex } from "./lib/quranSearch";
 import { parseAiReply, type Candidate } from "./lib/aiPick";
 
@@ -201,6 +202,10 @@ type Props = {
 
 export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, stale }: Props) {
   const set = <K extends keyof PanelSpec>(k: K, v: PanelSpec[K]) => setSpec((s) => ({ ...s, [k]: v }));
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const [askName, setAskName] = useState(false);
+  // a fresh panel opens the design list; saved work starts with it folded away
+  const [fresh] = useState(() => JSON.stringify(spec) === JSON.stringify(DEFAULT_SPEC));
   const num = (k: "widthMm" | "heightMm" | "columns", raw: string) => {
     const v = Number(raw);
     if (Number.isFinite(v) && v > 0) set(k, v);
@@ -208,7 +213,17 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
   return (
     <div className="card text-panel">
       <h3>Text panel</h3>
-      <div className="seg" role="group" aria-label="Template">
+      <DesignPicker
+        spec={spec}
+        setSpec={setSpec}
+        loadQuran={loadQuran}
+        startOpen={fresh}
+        onPicked={(d) => {
+          setAskName(d.ask === "name");
+          if (d.ask === "name") requestAnimationFrame(() => textRef.current?.focus());
+        }}
+      />
+      <div className="seg" role="group" aria-label="Layout">
         {TEMPLATES.map((t) => (
           <button
             key={t.id}
@@ -232,23 +247,37 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         </small>
       ) : (
         <label className="field">
-          <span>{spec.template === "plate" ? "Text (one line per row)" : "Words (one per tile)"}</span>
+          <span>{spec.template === "plate" ? (askName ? "Name (one line per row)" : "Text (one line per row)") : "Words (one per tile)"}</span>
           <textarea
+            ref={textRef}
+            className={askName && !spec.lines.some((l) => l.trim()) ? "wants-input" : undefined}
             dir="auto"
             name="panel-text"
             autoComplete="off"
             value={spec.lines.join("\n")}
             onChange={(e) => set("lines", e.target.value.split("\n"))}
-            placeholder={spec.template === "plate" ? "بسم الله\nMohammed Abuzar…" : "الرحمن\nالرحيم\nالملك…"}
+            placeholder={spec.template === "plate" ? (askName ? "Type the name in Arabic or English" : "بسم الله\nMohammed Abuzar…") : "الرحمن\nالرحيم\nالملك…"}
           />
         </label>
       )}
 
-      {spec.template !== "plate" ? (
-        <label className="field">
-          <span>Header (optional)</span>
-          <input type="text" dir="auto" name="panel-header" autoComplete="off" value={spec.header} onChange={(e) => set("header", e.target.value)} />
-        </label>
+      <label className="field">
+        <span>{spec.template === "plate" ? "Title along the top (optional)" : "Header (optional)"}</span>
+        <input type="text" dir="auto" name="panel-header" autoComplete="off" value={spec.header} onChange={(e) => set("header", e.target.value)} />
+      </label>
+      {spec.template === "plate" ? (
+        <>
+          <label className="field">
+            <span>Reference line at the bottom (optional)</span>
+            <input type="text" dir="auto" name="panel-footer" autoComplete="off" placeholder="البقرة ٢٥٥" value={spec.footer} onChange={(e) => set("footer", e.target.value)} />
+          </label>
+          {spec.lines.filter((l) => l.trim()).length >= 2 ? (
+            <label className="toggle">
+              <input type="checkbox" checked={spec.sections} onChange={(e) => set("sections", e.target.checked)} />
+              Divider lines between rows
+            </label>
+          ) : null}
+        </>
       ) : null}
 
       <div className="pair">

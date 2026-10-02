@@ -457,3 +457,70 @@ input[aria-invalid="true"] { border-color: var(--err); box-shadow: 0 0 0 1px var
 .stale-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: #fbefd9; color: #6b4a14; font-size: 13px; line-height: 1.4 }
 .font-hint { margin: 0; font-size: 13px; color: var(--ink) }
 .font-hint .linkish { min-height: 0; display: inline }
+
+/* ---- ready-made designs (Text panel) */
+.designs { display: grid; gap: 10px; margin: 0 0 14px; padding: 0 0 14px; border-bottom: 1px solid var(--line) }
+.designs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px }
+.designs-head strong { font-family: var(--display); font-size: 18px; font-weight: 500; color: var(--ink) }
+.design-cats { display: flex; flex-wrap: wrap; gap: 6px }
+.design-cats button {
+  min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: #fbf8f1; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.design-cats button[aria-pressed="true"] { background: var(--brass); border-color: var(--brass); color: var(--brass-ink) }
+.design-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px }
+.design-card {
+  display: grid; gap: 3px; align-content: start; width: 100%; height: 100%; min-height: 44px; padding: 8px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: #fbf8f1; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms var(--ease-out);
+}
+.design-card:active { transform: scale(0.98) }
+.design-card:disabled { cursor: progress }
+.design-card[aria-busy="true"] { border-color: var(--brass) }
+.design-card .plaque { margin-bottom: 5px }
+.design-title { font-size: 13px; font-weight: 700; line-height: 1.25 }
+.design-hint { font-size: 12px; color: var(--mute); line-height: 1.3 }
+.design-size { font-size: 12px; color: var(--brass-text) }
+@media (hover: hover) { .design-card:hover:not(:disabled) { border-color: var(--brass) } .design-cats button:hover:not([aria-pressed="true"]) { border-color: var(--brass) } }
+
+/* a small carved plaque: wooden moulding, a recessed field, raised letters */
+.plaque {
+  container-type: inline-size;
+  display: grid; width: 100%; padding: 5px; border-radius: 3px;
+  background: linear-gradient(145deg, #e6caa0, #b78b56);
+  box-shadow: inset 0 1px 0 #f6e3c3, inset 0 -2px 0 #8a6236, 0 1px 2px #1a181429;
+}
+.plaque-face {
+  display: grid; place-items: center; min-height: 0; padding: 4px 9%; border-radius: 2px; overflow: hidden;
+  background: linear-gradient(165deg, #d9b682, #c89e68);
+  box-shadow: inset 1px 1px 0 #8d673a, inset -1px -1px 0 #f1dab3;
+  color: #5a3a16; text-align: center; line-height: 1.55;
+  text-shadow: 0 1px 0 #f5e2c0b3, 0 -1px 0 #5b3d1a59;
+}
+.plaque.flowers .plaque-face {
+  /* the corner pockets: a quarter arc in each corner */
+  background-image:
+    radial-gradient(circle at 0 0, transparent 21cqi, #8d673a66 21.5cqi, #f1dab380 22.5cqi, transparent 23cqi),
+    radial-gradient(circle at 100% 0, transparent 21cqi, #8d673a66 21.5cqi, #f1dab380 22.5cqi, transparent 23cqi),
+    radial-gradient(circle at 0 100%, transparent 21cqi, #8d673a66 21.5cqi, #f1dab380 22.5cqi, transparent 23cqi),
+    radial-gradient(circle at 100% 100%, transparent 21cqi, #8d673a66 21.5cqi, #f1dab380 22.5cqi, transparent 23cqi),
+    linear-gradient(165deg, #d9b682, #c89e68);
+}
+.plaque-text { font-size: 19px; font-size: clamp(15px, 14cqi, 36px); font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.plaque-text.long { font-size: 15px; font-size: clamp(12px, 9.5cqi, 26px) }
+.plaque.small { width: 64px; padding: 3px }
+.plaque.small .plaque-text { font-size: 12px }
+
+.design-chosen {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  margin: 0 0 12px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fbf8f1;
+}
+.design-chosen:not(:has(.plaque)) { grid-template-columns: minmax(0, 1fr) auto }
+.design-chosen-text { display: grid; gap: 2px; min-width: 0 }
+.design-chosen-text strong { font-size: 14px; color: var(--ink) }
+.design-chosen-text span { font-size: 12px; color: var(--mute) }
+textarea.wants-input { border-color: var(--brass); box-shadow: 0 0 0 3px #c7751d33 }
+@media (max-width: 360px) { .design-list { grid-template-columns: 1fr } }
+@media (prefers-reduced-motion: reduce) { .design-card, .design-cats button { transition: none } }

@@ -63,6 +63,10 @@ export type PanelSpec = {
   /** Moulding shape when `frame` is on. */
   frameStyle: FrameStyle;
   corners: Corners;
+  /** Small line along the bottom (plate only), e.g. the reference "البقرة ٢٥٥". */
+  footer: string;
+  /** plate: a raised divider between the lines (e.g. the Four Quls as four sections). */
+  sections: boolean;
   /** grid only */
   columns: number;
 };
@@ -79,13 +83,15 @@ export const DEFAULT_SPEC: PanelSpec = {
   frame: true,
   frameStyle: "stepped",
   corners: "flowers",
+  footer: "",
+  sections: false,
   columns: 4,
 };
 
 /** Change template, resetting what belongs to the old one (the 99 Names board uses Naskh + Bismillah). */
 export function switchTemplate(spec: PanelSpec, t: Template): PanelSpec {
   if (t === "names99") return { ...spec, template: t, header: BISMILLAH, font: "naskh" };
-  if (t === "plate") return { ...spec, template: t, header: "", lines: spec.lines.some((l) => l.trim()) ? spec.lines : ["بسم الله"] };
+  if (t === "plate") return { ...spec, template: t, header: "", footer: "", sections: false, lines: spec.lines.some((l) => l.trim()) ? spec.lines : ["بسم الله"] };
   return { ...spec, template: t, header: spec.header === BISMILLAH ? "" : spec.header };
 }
 
@@ -133,6 +139,8 @@ export function restoreSpec(saved: string | null): PanelSpec {
     frame: typeof o.frame === "boolean" ? o.frame : d.frame,
     frameStyle: pick(o.frameStyle, ["classic", "stepped"] as const, d.frameStyle),
     corners: pick(o.corners, ["none", "stars", "flowers"] as const, d.corners),
+    footer: typeof o.footer === "string" ? o.footer.slice(0, 200) : d.footer,
+    sections: typeof o.sections === "boolean" ? o.sections : d.sections,
     columns: Math.round(num(o.columns, 1, 20, d.columns)),
   };
 }
@@ -269,31 +277,66 @@ export function layoutPanel(spec: PanelSpec): Layout {
 
   if (spec.template === "plate") {
     out.beads.push(inner);
-    if (spec.corners === "flowers") {
-      // a flower spray in each corner; keep them small enough to leave room for the name
-      const pr = Math.min(0.38 * Math.min(iw, ih), 0.2 * Math.max(iw, ih));
-      out.pockets = [
-        { cx: inner.x0, cy: inner.y0, sx: 1, sy: 1, r: pr },
-        { cx: inner.x1, cy: inner.y0, sx: -1, sy: 1, r: pr },
-        { cx: inner.x0, cy: inner.y1, sx: 1, sy: -1, r: pr },
-        { cx: inner.x1, cy: inner.y1, sx: -1, sy: -1, r: pr },
-      ];
-      out.arcs = out.pockets.map((p) => pocketArc(p));
+    const flowers = spec.corners === "flowers";
+    const header = spec.header.trim();
+    const footer = spec.footer.trim();
+    // corner pockets: one size for the whole plate
+    const pr = Math.min(0.38 * Math.min(iw, ih), 0.2 * Math.max(iw, ih));
+    let top = inner.y0;
+    let bottom = inner.y1;
+    if (header) {
+      const hh = Math.min(0.22 * ih, Math.max(0.14 * ih, 0.09 * iw));
+      const hp = headerParts({ ...spec, header, corners: flowers ? "flowers" : "none" }, inner.x0, inner.x1, inner.y0, hh);
+      out.beads.push(hp.box);
+      out.items.push(hp.item);
+      out.pockets.push(...hp.pockets);
+      top = inner.y0 + hh + 0.012 * ih;
+    } else if (flowers) {
+      out.pockets.push({ cx: inner.x0, cy: inner.y0, sx: 1, sy: 1, r: pr }, { cx: inner.x1, cy: inner.y0, sx: -1, sy: 1, r: pr });
+    }
+    if (flowers) {
+      // under a title band the bottom flowers are smaller accents, leaving the text more room
+      const br = header ? 0.62 * Math.min(pr, out.pockets[0]?.r ?? pr) : pr;
+      out.pockets.push({ cx: inner.x0, cy: inner.y1, sx: 1, sy: -1, r: br }, { cx: inner.x1, cy: inner.y1, sx: -1, sy: -1, r: br });
+    }
+    out.arcs = out.pockets.map((p) => pocketArc(p));
+    if (footer) {
+      const fh = Math.max(0.07 * (bottom - top), Math.min(0.1 * (bottom - top), 0.05 * iw));
+      const band = { x0: inner.x0, y0: bottom - fh, x1: inner.x1, y1: bottom };
+      out.items.push({ text: footer, font: "naskh", box: lineBox(band, fh * 0.12, out.pockets, footer, 0.02 * iw), group: "footer", role: "text", allowSplit: false });
+      bottom -= fh;
     }
     const lines = spec.lines.map((s) => s.trim()).filter(Boolean);
-    const n = Math.max(1, lines.length);
-    const lh = ih / n;
+    // Several short ayahs (e.g. Al-Ikhlas, one per line) share one letter size; a name plate mixes sizes.
+    const even = spec.font === "quran" && !spec.sections && lines.length >= 2 && lines.every((l) => l.split(/\s+/).length <= 9);
+    // Sections hold paragraphs of different length: give each a height that matches its text.
+    const weight = lines.map((t, i) => {
+      if (!spec.sections) return 1;
+      const w = Math.max(20, [...t].length);
+      const edge = out.pockets.length && i === lines.length - 1 ? 1.2 : 1; // the bottom pockets take some width there
+      return w * edge;
+    });
+    const total = weight.reduce((a, b) => a + b, 0) || 1;
+    let y = top;
     lines.forEach((t, i) => {
-      const band = { x0: inner.x0, y0: inner.y0 + i * lh, x1: inner.x1, y1: inner.y0 + (i + 1) * lh };
+      const lh = ((bottom - top) * weight[i]!) / total;
+      const band = { x0: inner.x0, y0: y, x1: inner.x1, y1: y + lh };
+      y += lh;
       const pad = Math.min(lh, iw) * 0.08;
       out.items.push({
         text: t,
         font: spec.font,
         box: lineBox(band, pad, out.pockets, t, 0.02 * iw),
-        group: `plate${i}`, // each line fills its own row (a name plate mixes sizes)
+        group: even ? "even" : `plate${i}`,
         role: "text",
         allowSplit: false,
       });
+      if (spec.sections && i > 0) {
+        // a raised divider between sections, clear of the corner pockets
+        const y = band.y0;
+        const side = pocketReach(out.pockets, y, y) + 0.03 * iw;
+        out.arcs.push([[inner.x0 + side, y], [inner.x1 - side, y]]);
+      }
     });
     out.items = out.items.map((it) => ({ ...it, text: quranMarks(it.text) }));
     return out;
@@ -383,7 +426,7 @@ export function fitText(items: readonly TextItem[], measure: Measure): DrawOp[] 
         // a long plate line: wrap onto the number of lines that gives the biggest letters
         const LH = 1.5; // line pitch in em (room for Arabic marks above and below)
         let best = { size, lines: [it.text] };
-        for (let k = 2; k <= Math.min(6, words.length); k++) {
+        for (let k = 2; k <= Math.min(10, words.length); k++) {
           const lines = balance(words, k);
           let s2 = bh / (k * LH);
           while (s2 > 0.5 && Math.max(...lines.map((l) => measure(l, it.font, s2))) > bw) s2 *= 0.97;
