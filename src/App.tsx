@@ -12,6 +12,7 @@ import { reliefRlf } from "./lib/rlf";
 import { reliefTif } from "./lib/tif";
 import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, restoreSpec, sizeProblem, type PanelSpec } from "./lib/textPanel";
 import { proofPng, rasterPanel } from "./lib/textRaster";
+import { outlineDxf } from "./lib/dxf";
 import { TextPanelCard } from "./TextPanelCard";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
@@ -695,6 +696,20 @@ export default function App() {
       setErr(sayErr(e));
     } finally {
       setBusy("");
+    }
+  }
+
+  async function saveOutline() {
+    setErr("");
+    try {
+      const ps = builtSpec ?? textSpec;
+      const shape = ps.template === "plate" || ps.template === "pattern" ? ps.shape : "rect";
+      const stem = artcamNames(exportSource(), ps.widthMm, ps.heightMm, board.depthMm, 0).bmp.replace(/\.bmp$/, "");
+      const dxf = outlineDxf(shape, ps.widthMm, ps.heightMm);
+      await saveFile(`${stem}-outline.dxf`, new Blob([dxf], { type: "application/dxf" }), "application/dxf");
+      setNote(`Cut outline downloaded · ${ps.widthMm} × ${ps.heightMm} mm · use it for the profile cut`);
+    } catch (e) {
+      setErr(sayErr(e));
     }
   }
 
@@ -1396,6 +1411,10 @@ export default function App() {
                         16-bit TIFF
                       </button>
                       <p className="meta">.rlf and TIFF are made at 0.25&nbsp;mm detail, finer than the STL.</p>
+                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveOutline()}>
+                        Cut outline (.dxf)
+                      </button>
+                      <p className="meta">The panel's edge as a vector, for the profile cut{(builtSpec ?? textSpec).shape !== "rect" && ((builtSpec ?? textSpec).template === "plate" || (builtSpec ?? textSpec).template === "pattern") ? " around the arch or oval" : ""}.</p>
                       <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveProof()}>
                         Proof image
                       </button>
