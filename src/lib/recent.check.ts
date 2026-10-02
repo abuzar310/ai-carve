@@ -1,4 +1,5 @@
 import { RECENT_MAX, addRecent, ago, parseRecent, recentTitle } from "./recent";
+import { duplicateRecent, removeRecent } from "./recentLite.ts";
 import { recentRows } from "./recentLite";
 import { DEFAULT_SPEC } from "./textPanel";
 
@@ -39,5 +40,20 @@ ok(ago(0, 30_000) === "just now" && ago(0, 5 * 60_000) === "5 min ago" && ago(0,
   ok(rows[0]!.rtl && !rows[1]!.rtl, "light rows: Arabic titles marked right-to-left");
   ok(rows[0]!.widthMm === plate.widthMm, "light rows: size kept");
   ok(recentRows("{bad").length === 0 && recentRows(null).length === 0 && recentRows("[1,null,{\"at\":\"x\"}]").length === 0, "light rows: garbage is skipped");
+}
+{
+  const raw = JSON.stringify([
+    { spec: { lines: ["a"], template: "plate", header: "", widthMm: 100, heightMm: 100 }, at: 2000 },
+    { spec: { lines: [], template: "names99", header: "", widthMm: 600, heightMm: 600 }, at: 1000 },
+  ]);
+  const gone = JSON.parse(removeRecent(raw, 2000)) as { at: number }[];
+  ok(gone.length === 1 && gone[0]!.at === 1000, "removeRecent drops the entry");
+  ok(JSON.parse(removeRecent(raw, 555)).length === 2, "removeRecent leaves others");
+  ok(removeRecent("{bad", 1) === "[]" && removeRecent(null, 1) === "[]", "removeRecent survives garbage");
+  const dup = JSON.parse(duplicateRecent(raw, 1000, 3000)!) as { at: number }[];
+  ok(dup.length === 3 && dup[0]!.at === 3000 && dup[1]!.at === 2000, "duplicateRecent copies to the front");
+  ok(duplicateRecent(raw, 999, 3000) === null && duplicateRecent("{bad", 1, 2) === null, "duplicateRecent: missing or garbage is null");
+  const many = JSON.stringify(Array.from({ length: 12 }, (_, i) => ({ spec: { lines: ["x"], template: "plate", header: "" }, at: i + 1 })));
+  ok(JSON.parse(duplicateRecent(many, 1, 99)!).length === 12, "duplicateRecent keeps the cap of 12");
 }
 console.log(`carve recent.check OK (${n} assertions)`);

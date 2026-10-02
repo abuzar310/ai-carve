@@ -8,7 +8,7 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { matchRoute, useLocation, type Route } from "./router";
 import { Brand, BottomNav, SiteFooter, TopNav, type Section } from "./chrome";
-import { CreatePage, HomePage, MissingPage, ProjectsPage, SettingsPage } from "./pages";
+import { CreatePage, HomePage, MissingPage, ProjectPage, ProjectsPage, SettingsPage } from "./pages";
 
 const Workspace = lazy(() => import("./App"));
 
@@ -60,6 +60,7 @@ export function Shell() {
   else if (route.page === "create") page = <CreatePage />;
   else if (route.page === "projects") page = <ProjectsPage />;
   else if (route.page === "settings") page = <SettingsPage />;
+  else if (route.page === "project") page = <ProjectPage id={route.id} />;
   else if (route.page !== "workspace") page = <MissingPage />;
 
   return (

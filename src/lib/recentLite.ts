@@ -58,3 +58,26 @@ export function recentRows(raw: string | null): RecentRow[] {
     return [];
   }
 }
+
+/** Remove the entry stamped `at`. Always returns a valid JSON array string. */
+export function removeRecent(raw: string | null, at: number): string {
+  try {
+    const v = raw ? (JSON.parse(raw) as unknown) : [];
+    return JSON.stringify(Array.isArray(v) ? v.filter((r) => !(r && typeof r === "object" && (r as { at?: unknown }).at === at)) : []);
+  } catch {
+    return "[]";
+  }
+}
+
+/** Copy the entry stamped `at` to the front with a fresh stamp. Null when it is not there. */
+export function duplicateRecent(raw: string | null, at: number, now: number): string | null {
+  try {
+    const v = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(v)) return null;
+    const hit = v.find((r) => r && typeof r === "object" && (r as { at?: unknown }).at === at) as { spec?: unknown } | undefined;
+    if (!hit?.spec) return null;
+    return JSON.stringify([{ spec: hit.spec, at: now }, ...v].slice(0, 12));
+  } catch {
+    return null;
+  }
+}

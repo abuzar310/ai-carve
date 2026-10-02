@@ -187,6 +187,32 @@ if (want(10)) {
   await p.context().close();
 }
 
+// 11. Projects: tabs, duplicate, delete, /project/:id (UX_REBUILD Phase 7, text projects)
+if (want(11)) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("carve.recent.v1", JSON.stringify([
+      { spec: { lines: ["Smoke plate"], template: "plate", header: "", widthMm: 300, heightMm: 120 }, at: 2000 },
+      { spec: { lines: [], template: "pattern", header: "", widthMm: 400, heightMm: 400 }, at: 1000 },
+    ]));
+  });
+  const p = await ctx.newPage();
+  p.errors = []; p.on("pageerror", (e) => p.errors.push(e.message));
+  p.on("dialog", (d) => d.accept());
+  await p.goto(BASE + "/projects"); await p.waitForTimeout(700);
+  check((await p.locator(".proj-tabs button").count()) === 4 && (await p.locator(".recent-item").count()) === 2, "projects: tabs and rows");
+  await p.click('.proj-tabs button:has-text("Pattern")'); await p.waitForTimeout(300);
+  check((await p.locator(".recent-item").count()) === 1, "projects: type tab filters");
+  await p.click('.proj-tabs button:has-text("All")');
+  await p.locator(".recent-acts .linkish", { hasText: "Duplicate" }).first().click(); await p.waitForTimeout(400);
+  check((await p.locator(".recent-item").count()) === 3, "projects: duplicate adds a copy");
+  await p.locator(".recent-acts .danger").first().click(); await p.waitForTimeout(400);
+  check((await p.locator(".recent-item").count()) === 2, "projects: delete removes after confirm");
+  await p.goto(BASE + "/project/2000"); await p.waitForTimeout(1200);
+  check(p.url().includes("/create/text") && !p.errors.length, `project link opens the workspace ${p.errors.join(" | ")}`);
+  await ctx.close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);

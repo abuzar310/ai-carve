@@ -811,3 +811,11 @@ details.tech summary, details.exp-more summary { cursor: pointer; color: var(--m
 details.tech ul { margin: 8px 0 0; padding-left: 18px; color: var(--mute) }
 details.tech ul li.tech-err { color: var(--err) }
 details.exp-more .btn { margin-top: 8px }
+
+/* ---- Projects: tabs + row actions (UX_REBUILD Phase 7) ---- */
+.proj-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px }
+.proj-tabs button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); color: var(--mute); font: inherit; font-weight: 600; cursor: pointer }
+.proj-tabs button[aria-pressed="true"] { color: var(--brass-text); border-color: var(--brass) }
+.recent-item { display: grid }
+.recent-acts { display: flex; gap: 14px; padding: 6px 2px 0 }
+.recent-acts .linkish { min-height: 44px }

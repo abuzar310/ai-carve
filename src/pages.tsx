@@ -1,8 +1,8 @@
 /** The light pages: Home, Create, Projects, Settings. None of them loads the engine, the AI model or 3D. */
 import { useEffect, useState } from "react";
-import { Link, WORKFLOW_PATH } from "./router";
+import { Link, WORKFLOW_PATH, navigate } from "./router";
 import { WORKFLOWS, type WorkflowCard } from "./workflows";
-import { RECENT_KEY, ago, recentRows, type RecentRow } from "./lib/recentLite";
+import { RECENT_KEY, ago, duplicateRecent, recentRows, removeRecent, type RecentRow } from "./lib/recentLite";
 import { MATERIALS } from "./lib/material";
 import { QUALITY_PREFS, clearKey, readMaterial, readQuality, readRaw, writeMaterial, writeQuality, PREFS_EVENT, type QualityPref } from "./lib/prefs";
 
@@ -22,13 +22,23 @@ function useRecent(): RecentRow[] {
   return rows;
 }
 
-function RecentList({ rows, limit }: { rows: RecentRow[]; limit?: number }) {
+function changeRecent(next: string | null) {
+  if (next === null) return;
+  try {
+    localStorage.setItem(RECENT_KEY, next);
+  } catch {
+    return; // private mode: nothing stored, nothing to change
+  }
+  window.dispatchEvent(new Event(PREFS_EVENT));
+}
+
+function RecentList({ rows, limit, actions }: { rows: RecentRow[]; limit?: number; actions?: boolean }) {
   const now = Date.now();
   return (
     <ul className="recent-list">
       {rows.slice(0, limit).map((r) => (
-        <li key={r.at}>
-          <Link to={`${WORKFLOW_PATH.text}?recent=${r.at}`} className="recent-row">
+        <li key={r.at} className="recent-item">
+          <Link to={`/project/${r.at}`} className="recent-row">
             <span className="recent-title" dir="auto" lang={r.rtl ? "ar" : undefined}>
               {r.title}
             </span>
@@ -37,10 +47,34 @@ function RecentList({ rows, limit }: { rows: RecentRow[]; limit?: number }) {
             </span>
             <span className="recent-open">Open</span>
           </Link>
+          {actions ? (
+            <div className="recent-acts">
+              <button type="button" className="linkish" onClick={() => changeRecent(duplicateRecent(readRaw(RECENT_KEY), r.at, Date.now()))}>
+                Duplicate
+              </button>
+              <button
+                type="button"
+                className="linkish danger"
+                onClick={() => {
+                  if (window.confirm(`Delete “${r.title}”? This cannot be undone.`)) changeRecent(removeRecent(readRaw(RECENT_KEY), r.at));
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          ) : null}
         </li>
       ))}
     </ul>
   );
+}
+
+/** /project/:id — a project link opens the workspace at that saved design. */
+export function ProjectPage({ id }: { id: string }) {
+  useEffect(() => {
+    navigate(`${WORKFLOW_PATH.text}?recent=${id}`, { replace: true });
+  }, [id]);
+  return null;
 }
 
 function StartCard({ w }: { w: WorkflowCard }) {
@@ -155,14 +189,36 @@ export function CreatePage() {
   );
 }
 
+const TABS = [
+  ["all", "All"],
+  ["text", "Text / Arabic"],
+  ["names99", "99 Names"],
+  ["pattern", "Pattern"],
+] as const;
+
 export function ProjectsPage() {
   const rows = useRecent();
+  const [tab, setTab] = useState<(typeof TABS)[number][0]>("all");
+  const shown = tab === "all" ? rows : rows.filter((r) => r.kind === tab);
   return (
     <main id="main" className="page projects">
       <h1>Projects</h1>
       <p className="lede">Text and pattern panels you build are kept in this browser, the last 12. Photo reliefs are not saved yet.</p>
       {rows.length ? (
-        <RecentList rows={rows} />
+        <div className="proj-tabs" role="group" aria-label="Project type">
+          {TABS.map(([id, label]) => (
+            <button key={id} type="button" aria-pressed={tab === id} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {rows.length ? (
+        shown.length ? (
+          <RecentList rows={shown} actions />
+        ) : (
+          <p className="meta">No {TABS.find(([id]) => id === tab)?.[1].toLowerCase()} projects yet.</p>
+        )
       ) : (
         <div className="empty-note">
           <p>No projects yet. Build a text or pattern panel and it will be listed here.</p>
