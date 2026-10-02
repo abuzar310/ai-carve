@@ -614,3 +614,6 @@ textarea.wants-input { border-color: var(--brass); box-shadow: 0 0 0 3px #c7751d
 
 /* Never size text in container-query units (cqi) here: Chrome re-laid-out every Arabic preview card
    repeatedly and the design list froze for 5 s on desktop and longer on phones. */
+
+/* cards hidden until they are useful (nothing uploaded or built yet) */
+.card[hidden], details.card[hidden] { display: none !important }

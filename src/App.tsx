@@ -469,6 +469,8 @@ export default function App() {
   }, [refined, raw]);
 
   const ready = !!mesh;
+  /** nothing uploaded or built yet: show only what is needed to start (examples, upload, mode) */
+  const empty = !pic && !raw;
   const exportTris = raw ? triangleEstimate(raw.cols, raw.rows, isSurfaceOnly(board.baseMm)) : 0;
   const exportMb = raw ? stlBytesEstimate(exportTris) / 1e6 : 0;
   const thickMm = board.depthMm + board.baseMm;
@@ -1172,7 +1174,7 @@ export default function App() {
               onBuild={() => void buildText()}
             />
           ) : null}
-          {mode === "photo" ? (
+          {mode === "photo" && !empty ? (
             <>
           <div className="card">
             <h3>Piece</h3>
@@ -1224,7 +1226,7 @@ export default function App() {
             </>
           ) : null}
 
-          {mode === "photo" ? (
+          {mode === "photo" && !empty ? (
           <div className="card">
             <h3>Relief</h3>
             <div className="seg" role="group" aria-label="Relief depth">
@@ -1250,7 +1252,7 @@ export default function App() {
           </div>
           ) : null}
 
-          {mode === "photo" ? (
+          {mode === "photo" && !empty ? (
             <>
           <div className="card">
             <h3>Image</h3>
@@ -1268,7 +1270,7 @@ export default function App() {
             </>
           ) : null}
 
-          <details className="card adv">
+          <details className="card adv" hidden={empty}>
             <summary>Advanced settings</summary>
             <div className="row" style={{ marginTop: 12 }}>
               <div>
@@ -1518,7 +1520,7 @@ export default function App() {
           </details>
           ) : null}
 
-          <div className="card">
+          <div className="card" hidden={!ready && !busy && !pic}>
             {ready ? (
               <>
                 <p className="ready-title">{verdict?.ok ? "STL valid" : "Check the relief"}</p>
