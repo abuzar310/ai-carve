@@ -17,6 +17,7 @@ import { shapeContour } from "./lib/shape";
 import { letterOutlines, vectorsDxf, vectorsSvg, type VectorLayer } from "./lib/vector";
 import { TextPanelCard } from "./TextPanelCard";
 import { TraceCard } from "./TraceCard";
+import { applyDesign, designById, resolveSrc } from "./lib/designs";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
 
@@ -91,6 +92,14 @@ function stagesFor(busy: string, text = false): readonly string[] {
   return BUILD_STAGES;
 }
 
+/** The start tiles: our own results, each loads a real example. */
+const STARTS: { id: string; title: string; hint: string; img: string; file?: string; design?: string }[] = [
+  { id: "photo", title: "Photo to relief", hint: "A carving photo, rebuilt in 3D", img: "/examples/ex-photo.webp", file: "/examples/carving.jpg" },
+  { id: "name", title: "Name plaque", hint: "Exact Arabic, flower corners", img: "/examples/ex-name.webp", design: "name-plate" },
+  { id: "pattern", title: "Star pattern", hint: "Allah in a 12-point star", img: "/examples/ex-pattern.webp", design: "allah-sunburst" },
+  { id: "trace", title: "Trace a drawing", hint: "Sketch or logo to DXF / SVG", img: "/examples/ex-trace.webp", file: "/examples/logo.png" },
+];
+
 export default function App() {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
   const [pic, setPic] = useState("");
@@ -147,6 +156,10 @@ export default function App() {
   const [traceImg, setTraceImg] = useState<HTMLImageElement | null>(null);
   /** Background level (zero plane), 0 = off. Photo relief only. */
   const [zeroLevel, setZeroLevel] = useState(0);
+  /** set by an example tile: build the text panel once the new spec is in state */
+  const [buildSoon, setBuildSoon] = useState(false);
+  /** bumped to open the Trace card */
+  const [traceOpen, setTraceOpen] = useState(0);
   const [cutBg, setCutBg] = useState(true);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
   const [wireframe, setWireframe] = useState(false);
@@ -650,6 +663,36 @@ export default function App() {
     window.setTimeout(step, 120);
   }
 
+  /** Start tiles: load a real example so a first visit shows a finished carving in seconds. */
+  async function tryPicture(path: string, name: string, thenTrace = false) {
+    try {
+      const blob = await (await fetch(path)).blob();
+      if (mode !== "photo") switchMode("photo");
+      await onFile(new File([blob], name, { type: blob.type || "image/png" }));
+      if (thenTrace) setTraceOpen((n) => n + 1);
+    } catch {
+      setErr("The example could not be loaded. Check your connection and try again.");
+    }
+  }
+  function tryDesign(id: string) {
+    const d = designById(id);
+    let spec = d ? applyDesign(d, null, textSpec) : null;
+    if (!spec || !d) return;
+    // a name design leaves the name to the customer: the example uses a vetted phrase, never typed Arabic
+    if (d.ask === "name") spec = { ...spec, lines: [resolveSrc({ phrase: "Muhammad" }, null) ?? ""] };
+    switchMode("text");
+    setTextSpec(spec);
+    setBuildSoon(true);
+  }
+  useEffect(() => {
+    if (buildSoon && mode === "text" && !busy) {
+      setBuildSoon(false);
+      void buildText();
+    }
+    // buildText reads the spec that is now in state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildSoon, mode, textSpec, busy]);
+
   async function buildText() {
     setErr("");
     setNote("");
@@ -978,7 +1021,23 @@ export default function App() {
                 ) : (
                   <>
                     <h2>Create your 3D relief</h2>
-                    <p>Start from a picture, or type a name, a verse or the 99 Names.</p>
+                    <p>Start from a picture, or type a name, a verse or the 99 Names. Or tap an example to see it carved.</p>
+                    <ul className="starts" aria-label="Examples">
+                      {STARTS.map((t) => (
+                        <li key={t.id}>
+                          <button
+                            type="button"
+                            className="start"
+                            disabled={!!busy}
+                            onClick={() => (t.design ? tryDesign(t.design) : void tryPicture(t.file!, t.file!.split("/").pop()!, t.id === "trace"))}
+                          >
+                            <img src={t.img} alt="" width={480} height={300} loading="lazy" decoding="async" />
+                            <span className="start-title">{t.title}</span>
+                            <span className="start-hint">{t.hint}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                     <div className="choice">
                       <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
                         Upload image
@@ -1176,7 +1235,7 @@ export default function App() {
               Cut plain background to 0 (when the picture has one)
             </label>
           </div>
-          <TraceCard img={traceImg} name={exportSource()} />
+          <TraceCard img={traceImg} name={exportSource()} openSignal={traceOpen} />
 
             </>
           ) : null}

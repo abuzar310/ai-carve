@@ -45,7 +45,9 @@ planar (CNC) mesh, invert for moulds, smoothing, depth cutoff, mesh stats, free 
 ornaments, ArtCAM .rlf + 16-bit TIFF + layered vectors, runs in the browser (private), free.
 
 ## Roadmap (from the research, in order)
-1. **Home toolbox + example gallery** — tool cards (Photo → relief, Text plaque, Pattern panel,
+1. ~~Home toolbox + example gallery~~ DONE: four start tiles on the empty stage (`STARTS` in App.tsx,
+   images + example inputs in `public/examples/`), each loads a real example and builds it.
+   Was: **Home toolbox + example gallery** — tool cards (Photo → relief, Text plaque, Pattern panel,
    Sketch → vectors, Depth map → relief) with our own before/after renders and "Try this example"
    buttons that load a sample instantly. Original design; do not copy competitors' pages or images.
 2. ~~Sketch / logo → vectors~~ — DONE: "Trace to vectors" card under Image (`TraceCard.tsx`, `traceBitmap`).

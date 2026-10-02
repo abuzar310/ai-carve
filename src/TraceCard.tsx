@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { saveFile } from "./lib/download";
 import { traceBitmap, vectorsDxf, vectorsSvg, type Pt } from "./lib/vector";
 
@@ -23,8 +23,14 @@ function luminance(img: HTMLImageElement, longSide = 1200): { lum: Float32Array;
 }
 
 /** Line drawings and logos → closed vector outlines (DXF / SVG) for V-carve and profile toolpaths. */
-export function TraceCard({ img, name }: { img: HTMLImageElement | null; name: string }) {
+export function TraceCard({ img, name, openSignal = 0 }: { img: HTMLImageElement | null; name: string; openSignal?: number }) {
   const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (!openSignal) return;
+    setOpen(true);
+    requestAnimationFrame(() => box.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }, [openSignal]);
   const [threshold, setThreshold] = useState(0.5);
   const [invert, setInvert] = useState(false);
   const [speck, setSpeck] = useState(1);
@@ -56,7 +62,7 @@ export function TraceCard({ img, name }: { img: HTMLImageElement | null; name: s
   }
 
   return (
-    <details className="card adv trace" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+    <details ref={box} className="card adv trace" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary>Trace to vectors (line art, logos)</summary>
       {!img ? (
         <p className="meta">Upload a drawing or logo first.</p>
