@@ -140,6 +140,16 @@ export function CreatePage() {
             ) : null}
           </li>
         ))}
+        <li>
+          <Link to={WORKFLOW_PATH.depth} className="choose-row">
+            <img src="/examples/ex-photo.webp" alt="" width={480} height={300} decoding="async" />
+            <span className="wf-text">
+              <span className="wf-title">Depth map</span>
+              <span className="wf-does">Already have a height map? It becomes the relief directly — no AI.</span>
+              <span className="wf-gives">White is high, black is deep</span>
+            </span>
+          </Link>
+        </li>
       </ul>
     </main>
   );
@@ -249,17 +259,6 @@ export function SettingsPage() {
   );
 }
 
-export function SoonPage() {
-  return (
-    <main id="main" className="page">
-      <h1>Depth map upload</h1>
-      <p className="lede">Uploading your own height map is not ready yet. Image relief makes the depth from a picture for you.</p>
-      <Link to={WORKFLOW_PATH.image} className="btn pri">
-        Open Image relief
-      </Link>
-    </main>
-  );
-}
 
 export function MissingPage() {
   return (

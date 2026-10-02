@@ -8,7 +8,7 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { matchRoute, useLocation, type Route } from "./router";
 import { Brand, BottomNav, SiteFooter, TopNav, type Section } from "./chrome";
-import { CreatePage, HomePage, MissingPage, ProjectsPage, SettingsPage, SoonPage } from "./pages";
+import { CreatePage, HomePage, MissingPage, ProjectsPage, SettingsPage } from "./pages";
 
 const Workspace = lazy(() => import("./App"));
 
@@ -18,14 +18,12 @@ const TITLES: Record<Route["page"], string> = {
   projects: "Projects · AI Carve",
   settings: "Settings · AI Carve",
   workspace: "AI Carve",
-  soon: "Depth map · AI Carve",
   project: "Project · AI Carve",
   missing: "Not found · AI Carve",
 };
 
 function sectionOf(r: Route): Section | null {
   if (r.page === "home" || r.page === "create" || r.page === "projects" || r.page === "settings") return r.page;
-  if (r.page === "soon") return "create";
   if (r.page === "project") return "projects";
   return null;
 }
@@ -62,7 +60,6 @@ export function Shell() {
   else if (route.page === "create") page = <CreatePage />;
   else if (route.page === "projects") page = <ProjectsPage />;
   else if (route.page === "settings") page = <SettingsPage />;
-  else if (route.page === "soon") page = <SoonPage />;
   else if (route.page !== "workspace") page = <MissingPage />;
 
   return (

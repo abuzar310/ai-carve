@@ -60,7 +60,8 @@ export const WORKFLOWS: readonly WorkflowCard[] = [
 ];
 
 /** Workspace title for the phone top bar. */
-export const WORKFLOW_TITLE: Record<Exclude<Workflow, "depth">, string> = {
+export const WORKFLOW_TITLE: Record<Workflow, string> = {
+  depth: "Depth map",
   image: "Image relief",
   text: "Text / Arabic",
   names99: "99 Names",

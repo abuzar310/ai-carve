@@ -59,7 +59,6 @@ if (want(2)) {
     ["/create", /What would you like to make/],
     ["/projects", /^Projects$/],
     ["/settings", /^Settings$/],
-    ["/create/depth-map", /Depth map upload/],
     ["/no-such-page-xyz", /Page not found/],
   ];
   for (const [route, heading] of ROUTES) {
@@ -71,7 +70,7 @@ if (want(2)) {
     await p.context().close();
   }
   // workspace routes: the engine host mounts on a cold refresh, no crash
-  for (const route of ["/create/image", "/create/text", "/create/text/99-names", "/create/pattern", "/create/trace"]) {
+  for (const route of ["/create/image", "/create/text", "/create/text/99-names", "/create/pattern", "/create/trace", "/create/depth-map"]) {
     const p = await page(browser);
     await p.goto(BASE + route);
     const host = await p.waitForSelector(".ws-host", { timeout: 15000 }).then(() => true).catch(() => false);
@@ -171,6 +170,20 @@ if (want(9)) {
   check(heads.includes("cnc files") && heads.includes("vectors"), "exports grouped: CNC files and Vectors");
   check(await p.locator("details.exp-more summary").isVisible(), "More exports collapsed");
   check(!p.errors.length, `export step without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+}
+
+// 10. Depth map upload (UX_REBUILD Phase 6): a height map becomes the relief with no model
+if (want(10)) {
+  const p = await page(browser);
+  await p.goto(BASE + "/create/depth-map"); await p.waitForTimeout(1000);
+  check(await p.getByRole("heading", { name: "Upload a height map" }).isVisible(), "depth-map flow shows its own heading");
+  await p.setInputFiles('input[name="source_image"]', "public/examples/carving.jpg");
+  let built = false;
+  for (let i = 0; i < 20; i++) { await p.waitForTimeout(1000); if (await p.getByText(/relief is ready/i).count()) { built = true; break; } }
+  check(built, "height map builds a relief without the model");
+  check((await p.getByText(/Height map used directly/).count()) > 0, "direct-use note shows");
+  check(!p.errors.length, `depth-map flow without errors ${p.errors.join(" | ")}`);
   await p.context().close();
 }
 

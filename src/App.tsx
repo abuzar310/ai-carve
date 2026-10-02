@@ -107,9 +107,9 @@ const STARTS: { id: string; title: string; hint: string; img: string; file?: str
   { id: "trace", title: "Trace a drawing", hint: "Sketch or logo to DXF / SVG", img: "/examples/ex-trace.webp", file: "/examples/logo.png" },
 ];
 
-type Active = Exclude<Workflow, "depth">;
+type Active = Workflow;
 /** Which workspace mode each workflow route uses (Phase 0/1: the same workspace, pre-set). */
-const MODE_OF: Record<Active, "photo" | "text"> = { image: "photo", trace: "photo", text: "text", names99: "text", pattern: "text" };
+const MODE_OF: Record<Active, "photo" | "text"> = { image: "photo", trace: "photo", depth: "photo", text: "text", names99: "text", pattern: "text" };
 
 type Props = {
   /** The workflow route being shown, or null while the workspace is hidden behind another page. */
@@ -276,13 +276,14 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     }
     // A turned leg takes its shape from the outline, so the depth model is skipped
     // (it is estimated later only if the user switches turned mode off).
-    const needDepth = !(kind === "leg" && turned);
+    const needDepth = !(kind === "leg" && turned) && workflow !== "depth";
     let dep: Float32Array | null | undefined;
     if (needDepth) {
       dep = await estimateDepth(img, iw, ih, next.cols, next.rows, (s) => setBusy(s));
       if (dep && invert) dep = dep.map((v) => 1 - v);
       if (!dep) setNote((n) => (n ? n + " " : "") + "Depth model unavailable: relief uses picture brightness only.");
     }
+    if (workflow === "depth") setNote("Height map used directly: white is high, black is deep.");
     setBusy("Building 3D relief");
     setRaw({ height: next.height, alpha: next.alpha, depth: dep, depthKind: dep ? activeDepthModel ?? "general" : undefined, cols: next.cols, rows: next.rows, invert });
     setCutPass((n) => n + 1);
@@ -329,6 +330,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   // Turned mode switched off (or piece changed) on a picture whose depth was skipped: estimate it now.
   useEffect(() => {
     if (!raw || raw.depth !== undefined || turnedOn || !lastImg.current) return;
+    if (workflow === "depth") return; // an uploaded height map IS the depth: never overwrite it with the model
     let live = true;
     const img = lastImg.current;
     const r = raw;
@@ -1134,7 +1136,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                   </>
                 ) : (
                   <>
-                    <h2>Create your 3D relief</h2>
+                    <h2>{workflow === "depth" ? "Upload a height map" : "Create your 3D relief"}</h2>
                     <p>Start from a picture, or type a name, a verse or the 99 Names. Or tap an example to see it carved.</p>
                     <ul className="starts" aria-label="Examples">
                       {STARTS.map((t) => (
