@@ -1,4 +1,5 @@
 import { RECENT_MAX, addRecent, ago, parseRecent, recentTitle } from "./recent";
+import { recentRows } from "./recentLite";
 import { DEFAULT_SPEC } from "./textPanel";
 
 let n = 0;
@@ -29,4 +30,14 @@ ok(recentTitle({ ...DEFAULT_SPEC, template: "names99" }) === "99 Names of Allah"
 ok(recentTitle({ ...DEFAULT_SPEC, template: "pattern", lines: [] }) === "Pattern panel", "title: pattern without text");
 ok(recentTitle({ ...plate, lines: ["x".repeat(40)] }).length === 28, "long titles are shortened");
 ok(ago(0, 30_000) === "just now" && ago(0, 5 * 60_000) === "5 min ago" && ago(0, 3 * 3_600_000) === "3 h ago" && ago(0, 86_400_000) === "yesterday" && ago(0, 3 * 86_400_000) === "3 days ago", "friendly times");
+// the light display parser (Home, Projects) agrees with the real one and never throws
+{
+  const list = addRecent(addRecent([], { ...DEFAULT_SPEC, template: "names99" }, 1000), { ...plate, lines: ["محمد"] }, 2000);
+  const rows = recentRows(JSON.stringify(list));
+  ok(rows.length === 2 && rows[0]!.at === 2000 && rows[1]!.kind === "names99", "light rows: order and kind");
+  ok(rows.every((r, i) => r.title === recentTitle(list[i]!.spec)), "light rows: same titles as the workspace");
+  ok(rows[0]!.rtl && !rows[1]!.rtl, "light rows: Arabic titles marked right-to-left");
+  ok(rows[0]!.widthMm === plate.widthMm, "light rows: size kept");
+  ok(recentRows("{bad").length === 0 && recentRows(null).length === 0 && recentRows("[1,null,{\"at\":\"x\"}]").length === 0, "light rows: garbage is skipped");
+}
 console.log(`carve recent.check OK (${n} assertions)`);

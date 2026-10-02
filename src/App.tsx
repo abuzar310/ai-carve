@@ -22,6 +22,10 @@ import { MATERIALS, type MaterialId } from "./lib/material";
 import { applyDesign, designById, resolveSrc } from "./lib/designs";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
+import { Link, WORKFLOW_PATH, navigate, type Workflow } from "./router";
+import { Brand, TopNav } from "./chrome";
+import { WORKFLOW_TITLE, type ExampleId } from "./workflows";
+import { PREFS_EVENT, readQuality } from "./lib/prefs";
 
 const ReliefPreview = lazy(async () => {
   const m = await import("./preview");
@@ -102,7 +106,22 @@ const STARTS: { id: string; title: string; hint: string; img: string; file?: str
   { id: "trace", title: "Trace a drawing", hint: "Sketch or logo to DXF / SVG", img: "/examples/ex-trace.webp", file: "/examples/logo.png" },
 ];
 
-export default function App() {
+type Active = Exclude<Workflow, "depth">;
+/** Which workspace mode each workflow route uses (Phase 0/1: the same workspace, pre-set). */
+const MODE_OF: Record<Active, "photo" | "text"> = { image: "photo", trace: "photo", text: "text", names99: "text", pattern: "text" };
+
+type Props = {
+  /** The workflow route being shown, or null while the workspace is hidden behind another page. */
+  workflow: Active | null;
+  /** Bumped on every push / back / forward navigation. */
+  navKey: number;
+  /** ?example=photo|name|pattern|trace: load that example and build it */
+  example: string | null;
+  /** ?recent=<time>: open that recent design */
+  recent: string | null;
+};
+
+export default function App({ workflow, navKey, example, recent }: Props) {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
   const [pic, setPic] = useState("");
   const [fileMeta, setFileMeta] = useState<FileMeta | null>(null);
@@ -112,7 +131,7 @@ export default function App() {
   const [smooth, setSmooth] = useState(0);
   const [clean, setClean] = useState(0.5);
   const [detail, setDetail] = useState(0.35);
-  const [quality, setQuality] = useState<Quality>("high");
+  const [quality, setQuality] = useState<Quality>(readQuality);
   const [tint, setTint] = useState(true);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
@@ -610,7 +629,7 @@ export default function App() {
     setSmooth(0);
     setInvert(false);
     setNormalize(true);
-    setQuality("high");
+    setQuality(readQuality());
   }
 
   /** Photo relief ↔ text panel. The other mode's 3D result is cleared; a loaded photo is kept for coming back. */
@@ -707,6 +726,90 @@ export default function App() {
     // buildText reads the spec that is now in state
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildSoon, mode, textSpec, busy]);
+
+  /* ---- routes: the URL picks the workflow; the workflow follows the URL (UX_REBUILD Phase 0/1) ---- */
+  const wfRef = useRef<Active>(workflow ?? (mode === "text" ? "text" : "image"));
+  if (workflow) wfRef.current = workflow;
+  const applied = useRef("");
+  const lastMode = useRef(mode);
+  /** the mode an entry asked for: until it lands, the URL is not moved (both effects see the old mode first) */
+  const pendingMode = useRef<"photo" | "text" | null>(null);
+  useEffect(() => {
+    if (!workflow) return;
+    document.title = `${WORKFLOW_TITLE[workflow]} · AI Carve`;
+    // once per navigation (StrictMode runs effects twice in development)
+    const sig = `${navKey}|${workflow}|${example ?? ""}|${recent ?? ""}`;
+    if (applied.current === sig) return;
+    applied.current = sig;
+    const path = WORKFLOW_PATH[workflow];
+    const want = MODE_OF[workflow];
+    if (want !== mode) {
+      pendingMode.current = want;
+      switchMode(want);
+    }
+    const ex = STARTS.find((t) => t.id === (example as ExampleId | null));
+    if (ex) {
+      navigate(path, { replace: true }); // a refresh must not run the example again
+      if (busy) return;
+      if (ex.design) tryDesign(ex.design);
+      else void tryPicture(ex.file!, ex.file!.split("/").pop()!, ex.id === "trace");
+      return;
+    }
+    if (recent) {
+      navigate(path, { replace: true });
+      let hit: PanelSpec | undefined;
+      try {
+        hit = parseRecent(localStorage.getItem(RECENT_KEY)).find((r) => String(r.at) === recent)?.spec;
+      } catch {
+        /* private mode */
+      }
+      if (hit && !busy) {
+        setTextSpec(hit);
+        setBuildSoon(true);
+      }
+      return;
+    }
+    // a workflow route opened without an example keeps the work in progress, unless it is the wrong kind
+    if (workflow === "names99" && textSpec.template !== "names99") {
+      const d = designById("names99");
+      const spec = d ? applyDesign(d, null, textSpec) : null;
+      if (spec) setTextSpec(spec);
+    } else if (workflow === "pattern" && textSpec.template !== "pattern") {
+      const d = designById("star-cross");
+      const spec = d ? applyDesign(d, null, textSpec) : null;
+      if (spec) setTextSpec(spec);
+    } else if (workflow === "trace" && lastImg.current) {
+      setTraceOpen((n) => n + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow, navKey, example, recent]);
+  // the workspace's own mode switch moves the URL along (replace: no extra history entries)
+  useEffect(() => {
+    if (pendingMode.current) {
+      if (mode === pendingMode.current) pendingMode.current = null;
+      lastMode.current = mode;
+      return;
+    }
+    if (lastMode.current === mode) return;
+    lastMode.current = mode;
+    if (!workflow || MODE_OF[workflow] === mode) return;
+    navigate(mode === "text" ? WORKFLOW_PATH.text : WORKFLOW_PATH.image, { replace: true });
+  }, [mode, workflow]);
+  // Trace workflow: a newly loaded drawing opens the Trace card
+  useEffect(() => {
+    if (traceImg && wfRef.current === "trace") setTraceOpen((n) => n + 1);
+  }, [traceImg]);
+  // Settings changed on another page (the workspace stays mounted)
+  useEffect(() => {
+    const onPrefs = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== "carve.material") return;
+      const m = stored("carve.material");
+      if (MATERIALS.some((x) => x.id === m)) setMaterial(m as MaterialId);
+    };
+    window.addEventListener(PREFS_EVENT, onPrefs);
+    return () => window.removeEventListener(PREFS_EVENT, onPrefs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function buildText() {
     setErr("");
@@ -884,23 +987,14 @@ export default function App() {
       />
 
       <header className="bar">
-        <a className="brand" href="#workspace" translate="no">
-          <span className="kicker">AI Carve</span>
-          <h1 className="word">Carve</h1>
-        </a>
-        <nav className="nav" aria-label="Product">
-          <a href="#workspace" aria-current={!pic || step !== "export" ? "page" : undefined}>Create</a>
-          <a href="#how">How it works</a>
-          <a href="#help-copy">Help</a>
-        </nav>
-        <details className="menu">
-          <summary>Menu</summary>
-          <nav aria-label="Product menu" onClick={(e) => (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open")}>
-            <a href="#workspace">Create</a>
-            <a href="#how">How it works</a>
-            <a href="#help-copy">Help</a>
-          </nav>
-        </details>
+        <Link className="ws-back" to="/create" aria-label="Back to Create">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
+        <Brand />
+        <h1 className="ws-title">{WORKFLOW_TITLE[workflow ?? wfRef.current]}</h1>
+        <TopNav at="create" />
         <div className="top-actions">
           <div className={"status" + (busy ? " run" : ready ? "" : " idle")} aria-live="polite">
             <i />
@@ -1607,49 +1701,6 @@ export default function App() {
         </aside>
       </main>
 
-      <footer className="foot">
-        <div className="foot-brand">
-          <p className="kicker">AI Carve</p>
-          <p className="foot-line">Photo or text → 3D relief → STL / .rlf</p>
-          <p>Turn a picture, a name or a verse into a carving file for ArtCAM and other CNC software.</p>
-        </div>
-        <div>
-          <h2>Product</h2>
-          <nav aria-label="Product">
-            <a href="#workspace">Create</a>
-            <a href="#how">How it works</a>
-          </nav>
-        </div>
-        <div>
-          <h2>Resources</h2>
-          <nav aria-label="Resources">
-            <a href="#help-copy">Help</a>
-            <a href="#formats">Supported formats</a>
-          </nav>
-        </div>
-        <div>
-          <h2>Legal</h2>
-          <nav aria-label="Legal">
-            <a href="#privacy">Privacy</a>
-          </nav>
-        </div>
-        <div className="foot-copy" id="how">
-          <h2>How it works</h2>
-          <p>Photo relief: upload a picture. Light areas rise, dark areas sink; choose detail and depth, then download the STL. Text panel: pick 99 Names, a name plate or a word grid, type or search the Arabic (Find Arabic), build, then download the STL, the ArtCAM .rlf or a 16-bit TIFF.</p>
-        </div>
-        <div className="foot-copy" id="help-copy">
-          <h2>Help</h2>
-          <p>Photos: keep invert off for normal carvings; turn it on only to cut the design into the wood like an engraving. Use a sharp picture at least 800 px wide. Text panels: the card shows how tall the letters will be — keep them above 6 mm. Download the proof image and have someone who reads the script check it before carving. In ArtCAM, the .rlf opens as a ready relief.</p>
-        </div>
-        <div className="foot-copy" id="formats">
-          <h2>Supported formats</h2>
-          <p>Upload JPG, PNG, WebP, or BMP. Export binary STL for Import 3D Model and an optional 8-bit height BMP; text panels also give an ArtCAM relief (.rlf) and a 16-bit TIFF at 0.25 mm, plus a proof PNG.</p>
-        </div>
-        <div className="foot-copy" id="privacy">
-          <h2>Privacy</h2>
-          <p>Pictures and the 3D work stay in this browser; Carve does not upload them. Two optional features send text to outside services: Smart search sends only the English words you type to Google Gemini, and “Describe a design” sends your description to an image service.</p>
-        </div>
-      </footer>
 
       {ready ? (
         <div className="sticky">

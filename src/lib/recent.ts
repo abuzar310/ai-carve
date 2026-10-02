@@ -6,7 +6,8 @@
 import { restoreSpec, type PanelSpec } from "./textPanel";
 
 export type Recent = { spec: PanelSpec; at: number };
-export const RECENT_KEY = "carve.recent.v1";
+export { RECENT_KEY, recentTitle, ago } from "./recentLite";
+import { RECENT_KEY } from "./recentLite";
 export const RECENT_MAX = 12;
 
 /** Same panel? (Ignores nothing: any change in text, size or look makes a new entry.) */
@@ -31,20 +32,3 @@ export function parseRecent(raw: string | null): Recent[] {
 }
 
 /** A short name for a recent panel: its first line of text, or what kind of panel it is. */
-export function recentTitle(spec: PanelSpec): string {
-  const first = spec.lines.map((l) => l.trim()).find(Boolean);
-  if (spec.template === "names99") return "99 Names of Allah";
-  if (first) return first.length > 28 ? first.slice(0, 27) + "…" : first;
-  if (spec.template === "pattern") return "Pattern panel";
-  return spec.header.trim() ? spec.header.trim().slice(0, 28) : "Text panel";
-}
-
-/** "just now", "5 min ago", "3 h ago", "2 days ago". */
-export function ago(at: number, now: number): string {
-  const s = Math.max(0, (now - at) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  const d = Math.floor(s / 86400);
-  return d === 1 ? "yesterday" : `${d} days ago`;
-}

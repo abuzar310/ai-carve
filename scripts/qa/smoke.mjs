@@ -2,8 +2,8 @@
  * Browser smoke test for AI Carve. Run against a built site:
  *   pnpm build && (npx vite preview --port 4173 --strictPort &) && node scripts/qa/smoke.mjs
  * Env: BASE (default http://localhost:4173), PLAYWRIGHT_BROWSERS_PATH, LOCAL_ORT=1 to serve the
- * ONNX runtime from node_modules when the CDN is blocked (sandbox), OUT (screenshot folder, qa-out).
- * Exits 1 on any failure. Grow this file with every phase of docs/UX_REBUILD.md.
+ * ONNX runtime from node_modules when the CDN is blocked (sandbox), OUT (screenshot folder, qa-out),
+ * ONLY=1,2,.. to run a subset of sections. Exits 1 on any failure. Grow it with every UX_REBUILD phase.
  */
 import { chromium } from "playwright";
 import fs from "node:fs";
@@ -13,7 +13,8 @@ const BASE = process.env.BASE ?? "http://localhost:4173";
 const OUT = process.env.OUT ?? "qa-out";
 fs.mkdirSync(OUT, { recursive: true });
 const fails = [];
-const check = (ok, msg) => { console.log(`${ok ? "✓" : "✗"} ${msg}`); if (!ok) fails.push(msg); };
+const check = (ok, msg) => { console.log(`${ok ? "\u2713" : "\u2717"} ${msg}`); if (!ok) fails.push(msg); };
+const want = (n) => !process.env.ONLY || process.env.ONLY.split(",").includes(String(n));
 
 const ortDir = (() => {
   const base = "node_modules/.pnpm";
@@ -40,8 +41,8 @@ const responsive = (p, ms = 4000) => Promise.race([p.evaluate(() => 1), new Prom
 
 const browser = await chromium.launch();
 
-// 1. first screen at 4 widths: loads, no errors, no sideways scroll
-for (const [w, h, mobile] of [[390, 844, true], [768, 1024, true], [1024, 768, false], [1440, 900, false]]) {
+// 1. Home at 4 widths: loads, no errors, no sideways scroll
+if (want(1)) for (const [w, h, mobile] of [[390, 844, true], [768, 1024, true], [1024, 768, false], [1440, 900, false]]) {
   const p = await page(browser, { width: w, height: h }, mobile);
   await p.goto(BASE); await p.waitForTimeout(1200);
   const overflow = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -51,42 +52,78 @@ for (const [w, h, mobile] of [[390, 844, true], [768, 1024, true], [1024, 768, f
   await p.context().close();
 }
 
-// 2. the design list opens fast, also on a slow phone (fresh storage: this is how the freeze hid)
-{
+// 2. every route survives a hard refresh (Vercel SPA rewrite) and renders its own page
+if (want(2)) {
+  const ROUTES = [
+    ["/", /CNC relief design studio/],
+    ["/create", /What would you like to make/],
+    ["/projects", /^Projects$/],
+    ["/settings", /^Settings$/],
+    ["/create/depth-map", /Depth map upload/],
+    ["/no-such-page-xyz", /Page not found/],
+  ];
+  for (const [route, heading] of ROUTES) {
+    const p = await page(browser);
+    await p.goto(BASE + route); await p.waitForTimeout(700);
+    const ok = await p.getByRole("heading", { name: heading }).count();
+    await p.screenshot({ path: `${OUT}/route-${route.replace(/\W+/g, "_") || "root"}.png` });
+    check(ok > 0 && !p.errors.length, `route ${route} renders on hard refresh ${p.errors.join(" | ")}`);
+    await p.context().close();
+  }
+  // workspace routes: the engine host mounts on a cold refresh, no crash
+  for (const route of ["/create/image", "/create/text", "/create/text/99-names", "/create/pattern", "/create/trace"]) {
+    const p = await page(browser);
+    await p.goto(BASE + route);
+    const host = await p.waitForSelector(".ws-host", { timeout: 15000 }).then(() => true).catch(() => false);
+    await p.waitForTimeout(1200);
+    check(host && !p.errors.length, `workspace route ${route} mounts on hard refresh ${p.errors.join(" | ")}`);
+    await p.context().close();
+  }
+}
+
+// 3. Home is light: engine, transformers and ORT wasm are NOT fetched on the front door
+if (want(3)) {
+  const p = await page(browser);
+  const heavy = [];
+  p.on("request", (r) => { if (/\/assets\/App-|transformers|ort-wasm/.test(r.url())) heavy.push(r.url()); });
+  await p.goto(BASE); await p.waitForTimeout(1800);
+  check(heavy.length === 0, `home loads no engine/model chunks (${heavy.length} heavy requests)`);
+  await p.context().close();
+}
+
+// 4. the design list opens fast in the Text workspace, also on a slow phone (fresh storage: this is how the freeze hid)
+if (want(4)) {
   const p = await page(browser, { width: 390, height: 844 }, true);
   const cdp = await p.context().newCDPSession(p);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 6 });
-  await p.goto(BASE); await p.waitForTimeout(1500);
   const t0 = Date.now();
-  await p.getByRole("button", { name: "Make a text panel" }).evaluate((e) => e.click());
+  await p.goto(BASE + "/create/text");
   await p.waitForFunction(() => document.querySelectorAll(".design-card").length > 0, null, { timeout: 15000 }).catch(() => {});
   const ms = Date.now() - t0;
-  check(ms < 6000 && (await responsive(p)), `design list opens on a 6× slower CPU (${ms} ms)`);
+  const cards = await p.locator(".design-card").count();
+  check(cards > 0 && ms < 8000 && (await responsive(p)), `design list opens in Text on a 6x slower CPU (${cards} cards, ${ms} ms)`);
   await p.context().close();
 }
 
-// 3. every example tile builds a result
-for (const tile of ["Photo to relief", "Name plaque", "Star pattern", "Trace a drawing"]) {
+// 5. every Start-a-project example builds a 3D result (Home -> "Try ..." -> workspace auto-builds)
+if (want(5)) for (const label of ["Try a carving photo", "Try a name plaque", "Try a star pattern", "Try a drawing"]) {
   const p = await page(browser);
-  await p.goto(BASE); await p.waitForTimeout(800);
-  const t = p.getByRole("button", { name: new RegExp(tile) });
-  if (!(await t.count())) { check(false, `tile "${tile}" present`); await p.context().close(); continue; }
-  await t.click();
-  check(await ready(p), `tile "${tile}" builds a 3D result`);
-  check(!p.errors.length, `tile "${tile}" without errors ${p.errors.join(" | ")}`);
+  await p.goto(BASE); await p.waitForTimeout(600);
+  const t = p.getByRole("link", { name: label });
+  if (!(await t.count())) { check(false, `start card "${label}" present`); await p.context().close(); continue; }
+  await t.first().click();
+  check(await ready(p), `"${label}" builds a 3D result`);
+  check(!p.errors.length, `"${label}" without errors ${p.errors.join(" | ")}`);
   await p.context().close();
 }
 
-// 4. a pattern-only design builds (it was once refused with "Type some text first")
-{
+// 6. a pattern-only panel builds (once refused with "Type some text first") and offers every export
+if (want(6)) {
   const p = await page(browser);
-  await p.goto(BASE);
-  await p.getByRole("button", { name: "Make a text panel" }).click(); await p.waitForTimeout(1000);
-  await p.getByRole("button", { name: "Patterns", exact: true }).click();
-  await p.getByRole("button", { name: /Star and cross/ }).first().click(); await p.waitForTimeout(800);
-  await p.getByRole("button", { name: /Build text panel|Rebuild text panel/ }).last().click();
-  check(await ready(p), "pattern-only design (Star and cross) builds");
-  // exports offered once built
+  await p.goto(BASE + "/create/pattern"); await p.waitForTimeout(1800);
+  const build = p.getByRole("button", { name: /Build text panel|Rebuild text panel/ });
+  if (await build.count()) await build.last().click();
+  check(await ready(p), "pattern-only panel builds");
   for (const name of [/Download STL/i, /\.rlf/i, /TIFF/i, /Vectors for V-carve/i]) check((await p.getByRole("button", { name }).count()) > 0, `export offered: ${name}`);
   await p.context().close();
 }

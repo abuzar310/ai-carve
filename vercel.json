@@ -1,5 +1,11 @@
 {
   "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/((?!api/|assets/|examples/|fonts/|models/|data/).*)",
+      "destination": "/index.html"
+    }
+  ],
   "functions": {
     "api/imagine.ts": {
       "maxDuration": 60

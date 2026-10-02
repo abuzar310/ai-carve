@@ -617,3 +617,154 @@ textarea.wants-input { border-color: var(--brass); box-shadow: 0 0 0 3px #c7751d
 
 /* cards hidden until they are useful (nothing uploaded or built yet) */
 .card[hidden], details.card[hidden] { display: none !important }
+
+/* ---------- shell: navigation, Home, Create, Projects, Settings (UX_REBUILD Phase 1) ---------- */
+a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center }
+.linkish { color: var(--brass-text); text-decoration: underline; text-underline-offset: 3px }
+.site { max-width: 1240px; margin: 0 auto; padding: 12px 20px 48px }
+.site-bar .brand { margin-right: auto }
+.site-bar .nav { margin-left: 0 }
+.nav a { padding: 0 2px; border-bottom: 2px solid transparent }
+.nav a[aria-current="page"] { border-bottom-color: var(--brass) }
+.ws-back { display: none }
+/* the workspace heading: read by screen readers everywhere, shown in the phone top bar */
+.ws-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0 }
+.ws-loading { min-height: 60vh; display: grid; place-items: center; color: var(--mute) }
+.page { padding: 8px 0 24px }
+.page h1 {
+  margin: 8px 0 10px; font-family: var(--display); font-weight: 560;
+  font-size: clamp(30px, 4.2vw, 46px); line-height: 1.05; letter-spacing: -.025em;
+}
+.page h1:focus { outline: none }
+.lede { margin: 0 0 20px; max-width: 38em; color: #3d3930; font-size: 17px; line-height: 1.5 }
+.block { margin-top: 36px }
+.block h2, .set-row h2 { margin: 0 0 12px; font-family: var(--display); font-size: 22px; font-weight: 540; letter-spacing: -.01em }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px }
+.actions-row { display: flex; flex-wrap: wrap; gap: 10px }
+
+/* Home hero: left aligned, the work below is the picture */
+.hero { padding: 28px 0 8px; border-bottom: 1px solid var(--line) }
+.hero h1 { font-size: clamp(34px, 5.6vw, 64px); max-width: 12em }
+.hero .lede { margin-bottom: 22px }
+.hero-cta { min-height: 48px; padding: 0 26px; font-size: 16px; margin-bottom: 28px }
+
+/* start cards: each shows a real result on the dark stage */
+.wf-grid, .choose, .recent-list { list-style: none; margin: 0; padding: 0 }
+.wf-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px }
+.wf-card {
+  display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--card); overflow: hidden;
+}
+.wf-main { display: flex; flex-direction: column; color: inherit; text-decoration: none; flex: 1 }
+.wf-main img, .choose-row img {
+  display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; object-fit: cover; background: var(--well);
+}
+.wf-text { display: grid; gap: 4px; padding: 12px 14px 6px }
+.wf-title { font-family: var(--display); font-size: 20px; font-weight: 560; letter-spacing: -.01em }
+.wf-does { font-size: 14px; color: #3d3930; line-height: 1.4 }
+.wf-gives { font-size: 13px; color: var(--mute) }
+.wf-try {
+  margin: 6px 14px 14px; align-self: flex-start; min-height: 40px; display: inline-flex; align-items: center;
+  color: var(--brass-text); font-weight: 700; font-size: 14px; text-decoration: underline; text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  .wf-card:has(.wf-main:hover) { border-color: var(--brass) }
+  .wf-main:hover .wf-title, .choose-row:hover .wf-title { color: var(--brass-text) }
+  .recent-row:hover { border-color: var(--brass) }
+}
+.wf-main:focus-visible, .wf-try:focus-visible, .choose-row:focus-visible, .recent-row:focus-visible, .choose-sub:focus-visible, .bottom-nav a:focus-visible, .nav a:focus-visible, .brand:focus-visible, .ws-back:focus-visible {
+  outline: 2px solid var(--brass); outline-offset: 2px;
+}
+
+/* recent rows */
+.recent-list { display: grid; gap: 8px }
+.recent-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "t o" "m o"; gap: 2px 12px; align-items: center;
+  padding: 12px 14px; min-height: 56px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--card); color: inherit; text-decoration: none;
+}
+.recent-title { grid-area: t; font-size: 18px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.recent-title:lang(ar) { font-size: 22px; font-weight: 400; line-height: 1.3; text-align: start }
+.recent-meta { grid-area: m; font-size: 13px; color: var(--mute) }
+.recent-open { grid-area: o; color: var(--brass-text); font-weight: 700; font-size: 14px }
+
+/* files you get */
+.file-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 }
+.file-groups div { padding-top: 10px; border-top: 2px solid var(--ink) }
+.file-groups dt { font-weight: 700; margin-bottom: 4px }
+.file-groups dd { margin: 0; color: #3d3930; font-size: 15px }
+
+/* Create */
+.choose { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px }
+.choose > li { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); overflow: hidden }
+.choose-row { display: grid; grid-template-columns: 200px minmax(0, 1fr); color: inherit; text-decoration: none; flex: 1 }
+.choose-row img { height: 100%; aspect-ratio: auto; min-height: 125px }
+.choose-row .wf-text { padding: 14px 16px; align-content: center }
+.choose-sub {
+  border-top: 1px solid var(--line); padding: 0 16px; min-height: 44px; display: flex; align-items: center;
+  color: var(--brass-text); font-weight: 700; font-size: 14px; text-decoration: none;
+}
+.choose-sub:hover { background: #efe8d8 }
+
+/* Projects, Settings */
+.empty-note { padding: 22px; border: 1px dashed var(--line); border-radius: var(--r); background: var(--card); max-width: 34em }
+.empty-note p { margin: 0 0 14px }
+.settings .lede { margin-bottom: 8px }
+.set-row { padding: 20px 0; border-bottom: 1px solid var(--line); max-width: 640px }
+.set-row h2 { font-size: 19px; margin-bottom: 4px }
+.set-row p { margin: 0 0 12px; color: #3d3930 }
+.set-row .seg { max-width: 460px }
+select.field {
+  min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fffdf8; min-width: 220px;
+}
+
+/* phone bottom navigation (outside a project only) */
+.bottom-nav { display: none }
+
+@media (max-width: 1100px) {
+  .wf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+}
+@media (max-width: 900px) {
+  .nav { display: flex; gap: 12px; font-size: 14px }
+  .bar .nav { margin-left: auto }
+  .site-bar .nav { margin-left: 0 }
+  .choose { grid-template-columns: 1fr }
+  .file-groups { grid-template-columns: 1fr; gap: 10px }
+  .site { padding: 12px 14px 40px }
+}
+@media (max-width: 600px) {
+  .nav { display: none }
+  .site { padding: 8px 14px calc(88px + env(safe-area-inset-bottom)) }
+  .hero { padding-top: 12px }
+  .hero-cta { width: 100% }
+  .lede { font-size: 16px }
+  .wf-grid { grid-template-columns: 1fr; gap: 10px }
+  .wf-card { display: grid; grid-template-columns: 112px minmax(0, 1fr); }
+  .wf-main { display: contents }
+  .wf-main img { grid-row: 1 / 3; height: 100%; aspect-ratio: auto; min-height: 112px }
+  .wf-text { padding: 10px 12px 0 }
+  .wf-title { font-size: 18px }
+  .wf-does { font-size: 13.5px }
+  .wf-gives { display: none }
+  .wf-try { margin: 0 12px 6px; grid-column: 2; min-height: 44px }
+  .choose-row { grid-template-columns: 112px minmax(0, 1fr) }
+  .choose-row img { min-height: 112px }
+  .choose-row .wf-gives { display: none }
+  .bottom-nav {
+    display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sticky);
+    padding: 4px 6px env(safe-area-inset-bottom); background: var(--card); box-shadow: 0 -6px 18px #1a181410; border-top: 1px solid var(--line);
+  }
+  .bottom-nav a {
+    min-height: 56px; display: grid; justify-items: center; align-content: center; gap: 2px;
+    color: var(--mute); text-decoration: none; font-size: 12px; font-weight: 700; border-radius: var(--r-sm);
+  }
+  .bottom-nav a[aria-current="page"] { color: var(--ink) }
+  .bottom-nav a[aria-current="page"] svg { color: var(--brass) }
+  /* inside a project: back + workflow name; the site nav is out of the way */
+  .app .bar .brand { display: none }
+  .ws-back {
+    display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-left: -8px;
+    color: var(--ink); border-radius: var(--r-sm);
+  }
+  .ws-title { position: static; width: auto; height: auto; overflow: visible; clip-path: none; display: block; margin: 0 auto 0 0; font-family: var(--display); font-size: 19px; font-weight: 560; letter-spacing: -.01em; white-space: nowrap }
+}
