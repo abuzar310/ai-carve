@@ -145,6 +145,18 @@ if (want(7)) {
   await p.context().close();
 }
 
+// 8. 99 Names honest verification (UX_REBUILD Phase 3): all computed checks pass, proof renders
+if (want(8)) {
+  const p = await page(browser);
+  await p.goto(BASE + "/create/text/99-names"); await p.waitForTimeout(1500);
+  check(await p.locator(".verify").isVisible(), "99 Names verification card shows");
+  check((await p.locator(".verify .checks li.pass").count()) === 4 && (await p.locator(".verify .checks li.fail").count()) === 0, "all four 99-Names checks pass");
+  await p.getByRole("button", { name: /View exact text/ }).click(); await p.waitForTimeout(2500);
+  check(await p.locator("img.proof").isVisible(), "exact-text proof image renders");
+  check(!p.errors.length, `99 Names route without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);

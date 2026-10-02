@@ -17,6 +17,7 @@ import { shapeContour } from "./lib/shape";
 import { letterOutlines, vectorsDxf, vectorsSvg, type VectorLayer } from "./lib/vector";
 import { TextPanelCard } from "./TextPanelCard";
 import { TraceCard } from "./TraceCard";
+import { NamesVerify } from "./NamesVerify";
 import { RECENT_KEY, addRecent, parseRecent } from "./lib/recent";
 import { MATERIALS, type MaterialId } from "./lib/material";
 import { applyDesign, designById, resolveSrc } from "./lib/designs";
@@ -1301,6 +1302,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
               onBuild={() => void buildText()}
             />
           ) : null}
+          {mode === "text" && textSpec.template === "names99" ? <NamesVerify spec={textSpec} /> : null}
           {mode === "photo" && !empty ? (
             <>
           <div className="card" hidden={panelStep !== "size"}>
