@@ -10,7 +10,7 @@ import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, 
 import { reliefBmp } from "./lib/bmp";
 import { reliefRlf } from "./lib/rlf";
 import { reliefTif } from "./lib/tif";
-import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, restoreSpec, sizeProblem, type PanelSpec } from "./lib/textPanel";
+import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, missingText, restoreSpec, sizeProblem, type PanelSpec } from "./lib/textPanel";
 import { proofPng, rasterPanel } from "./lib/textRaster";
 import { outlineDxf } from "./lib/dxf";
 import { shapeContour } from "./lib/shape";
@@ -699,8 +699,7 @@ export default function App() {
     setBusy("Typesetting");
     try {
       await tick();
-      const words = textSpec.template === "names99" ? 1 : textSpec.lines.filter((l) => l.trim()).length;
-      if (!words) throw new Error("Type some text first.");
+      if (missingText(textSpec)) throw new Error("Type some text first.");
       const bad = sizeProblem(textSpec);
       if (bad) throw new Error(bad);
       const f = await textField(mobile ? 1024 : QUALITY.ultra.field);

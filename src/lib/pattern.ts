@@ -9,7 +9,7 @@
 export type Pt = readonly [number, number];
 export type Seg = readonly [Pt, Pt];
 export type PatternKind = "star8" | "star6" | "octagon8" | "star12";
-export type BandStyle = "raised" | "double" | "groove";
+export type BandStyle = "raised" | "double" | "groove" | "woven";
 
 export const PATTERNS: readonly { id: PatternKind; label: string; hint: string }[] = [
   { id: "star8", label: "Star and cross", hint: "The classic 8-point tile" },
@@ -249,6 +249,10 @@ export function drawPattern(
 ): void {
   const half = Math.max(bandMm / 2, mmPx * 0.8);
   const shoulder = Math.max(half * 0.45, mmPx * 0.8);
+  if (style === "woven") {
+    drawWoven(h, cols, rows, mmPx, segs, ground, half, shoulder, heightMm, keep);
+    return;
+  }
   // nearest-band distance per pixel, so crossings join cleanly
   const dist = new Float32Array(cols * rows).fill(Infinity);
   for (const s of segs) {
@@ -284,5 +288,205 @@ export function drawPattern(
       if (style === "double" && d < grooveHalf) z -= heightMm * 0.45 * (1 - d / grooveHalf);
       if (z > h[i]!) h[i] = z;
     }
+  }
+}
+
+// ---------------------------------------------------------------- weaving (over and under)
+
+/** For each segment, the positions t (0..1 along it) where it passes UNDER another band. */
+export type Weave = number[][];
+
+/**
+ * Over-under for star-pattern lines, like hand-carved interlace: follow each strand (lines that run
+ * straight on through a crossing) and alternate over, under, over… Crossings are where two segments
+ * cut through each other, or where four segment ends meet as two straight lines. Each crossing is
+ * decided once, by whichever strand reaches it first; the other strand takes the opposite.
+ */
+export function weave(segs: readonly Seg[]): Weave {
+  return weaveFull(segs).under;
+}
+
+/** weave(), plus which strand (continuous band) each segment belongs to. */
+export function weaveFull(segs: readonly Seg[]): { under: Weave; strand: Int32Array } {
+  const n = segs.length;
+  const under: Weave = segs.map(() => []);
+  type Pass = { seg: number; t: number };
+  type Cross = { a: Pass[]; b: Pass[]; over?: "a" | "b" };
+  const crosses: Cross[] = [];
+  // crossings met along each segment: [t, crossing, side]
+  const along: [number, number, "a" | "b"][][] = segs.map(() => []);
+  const dir = (s: Seg) => {
+    const dx = s[1][0] - s[0][0];
+    const dy = s[1][1] - s[0][1];
+    const l = Math.hypot(dx, dy) || 1;
+    return [dx / l, dy / l] as const;
+  };
+  // 1) interior crossings
+  for (let i = 0; i < n; i++) {
+    const [[ax, ay], [bx, by]] = segs[i]!;
+    for (let j = i + 1; j < n; j++) {
+      const [[cx, cy], [dx, dy]] = segs[j]!;
+      if (Math.max(ax, bx) < Math.min(cx, dx) || Math.max(cx, dx) < Math.min(ax, bx) || Math.max(ay, by) < Math.min(cy, dy) || Math.max(cy, dy) < Math.min(ay, by)) continue;
+      const rx = bx - ax, ry = by - ay, sx = dx - cx, sy = dy - cy;
+      const den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((cx - ax) * sy - (cy - ay) * sx) / den;
+      const u = ((cx - ax) * ry - (cy - ay) * rx) / den;
+      if (t <= 1e-6 || t >= 1 - 1e-6 || u <= 1e-6 || u >= 1 - 1e-6) continue;
+      const k = crosses.push({ a: [{ seg: i, t }], b: [{ seg: j, t: u }] }) - 1;
+      along[i]!.push([t, k, "a"]);
+      along[j]!.push([u, k, "b"]);
+    }
+  }
+  // 2) joints: segment ends that meet; pair the ends that continue most nearly straight
+  const key = (p: Pt) => `${Math.round(p[0] * 100)},${Math.round(p[1] * 100)}`;
+  const ends = new Map<string, { seg: number; end: 0 | 1 }[]>();
+  segs.forEach((s, i) => ([0, 1] as const).forEach((e) => {
+    const k = key(s[e]);
+    (ends.get(k) ?? ends.set(k, []).get(k)!).push({ seg: i, end: e });
+  }));
+  // next[seg][end] = the segment end a strand continues into
+  const next: ({ seg: number; end: 0 | 1 } | null)[][] = segs.map(() => [null, null]);
+  for (const list of ends.values()) {
+    // outward direction of each end (pointing away from the joint, along its segment)
+    const out = list.map(({ seg, end }) => {
+      const [x, y] = dir(segs[seg]!);
+      return end === 0 ? [x, y] : [-x, -y];
+    });
+    const used = new Set<number>();
+    const pairs: [number, number][] = [];
+    for (;;) {
+      let best = -1, bi = -1, bj = -1;
+      for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+        if (used.has(i) || used.has(j)) continue;
+        const straight = -(out[i]![0]! * out[j]![0]! + out[i]![1]! * out[j]![1]!); // 1 = straight on
+        if (straight > best) (best = straight), (bi = i), (bj = j);
+      }
+      if (bi < 0) break;
+      used.add(bi); used.add(bj);
+      pairs.push([bi, bj]);
+      next[list[bi]!.seg]![list[bi]!.end] = list[bj]!;
+      next[list[bj]!.seg]![list[bj]!.end] = list[bi]!;
+    }
+    if (pairs.length === 2) {
+      // four ends meeting as two lines: that is a crossing too
+      const pass = (p: [number, number]): Pass[] => p.map((q) => ({ seg: list[q]!.seg, t: list[q]!.end }));
+      const k = crosses.push({ a: pass(pairs[0]!), b: pass(pairs[1]!) }) - 1;
+      for (const q of pairs[0]!) along[list[q]!.seg]!.push([list[q]!.end, k, "a"]);
+      for (const q of pairs[1]!) along[list[q]!.seg]!.push([list[q]!.end, k, "b"]);
+    }
+  }
+  for (const a of along) a.sort((x, y) => x[0] - y[0]);
+  // 3) walk strands and alternate
+  const seen = new Uint8Array(n);
+  const strand = new Int32Array(n).fill(-1);
+  let strands = 0;
+  const walk = (start: number, from: 0 | 1) => {
+    const id = strands++;
+    let parity: boolean | null = null; // true = next crossing goes over
+    let seg = start;
+    let entry = from;
+    const visitedJoint = new Set<number>();
+    while (!seen[seg]) {
+      seen[seg] = 1;
+      strand[seg] = id;
+      const list = entry === 0 ? along[seg]! : [...along[seg]!].reverse();
+      for (const [, k, side] of list) {
+        const c = crosses[k]!;
+        // a joint crossing is listed on both segments of a pass: count it once per strand
+        const joint = c.a.length > 1;
+        if (joint && visitedJoint.has(k)) continue;
+        if (joint) visitedJoint.add(k);
+        if (c.over === undefined) {
+          const over: boolean = parity ?? true;
+          c.over = over ? side : side === "a" ? "b" : "a";
+        }
+        parity = c.over !== side; // after going over, go under next (and vice versa)
+      }
+      const exit = (1 - entry) as 0 | 1;
+      const nx = next[seg]![exit];
+      if (!nx) break;
+      seg = nx.seg;
+      entry = nx.end;
+    }
+  };
+  // start from strand ends first (lines cut by the border), then closed loops
+  for (let i = 0; i < n; i++) for (const e of [0, 1] as const) if (!seen[i] && !next[i]![e]) walk(i, e);
+  for (let i = 0; i < n; i++) if (!seen[i]) walk(i, 0);
+  for (const c of crosses) for (const p of c.over === "a" ? c.b : c.a) under[p.seg]!.push(p.t);
+  return { under, strand };
+}
+
+/**
+ * Woven bands: double-line strapwork where each band dips under the crossing band and rises again,
+ * so the over band reads as passing on top. Heights are worked out per segment and the highest wins.
+ */
+function drawWoven(
+  h: Float32Array, cols: number, rows: number, mmPx: number, segs: readonly Seg[], ground: number,
+  half: number, shoulder: number, heightMm: number, keep?: (x: number, y: number) => boolean,
+): void {
+  const { under, strand } = weaveFull(segs);
+  const top = new Float32Array(cols * rows).fill(-Infinity);
+  const win = new Int32Array(cols * rows).fill(-1); // which strand is on top at each pixel
+  const gapR = half * 1.35; // under the crossing band plus a small gap either side
+  const dipR = half * 3.4; // back to full height here
+  const grooveHalf = half * 0.28;
+  segs.forEach((s, si) => {
+    const [[ax, ay], [bx, by]] = s;
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1e-9;
+    const unders = under[si]!;
+    const c0 = Math.max(0, Math.floor((Math.min(ax, bx) - half) / mmPx) - 1);
+    const c1 = Math.min(cols - 1, Math.ceil((Math.max(ax, bx) + half) / mmPx) + 1);
+    const r0 = Math.max(0, Math.floor((Math.min(ay, by) - half) / mmPx) - 1);
+    const r1 = Math.min(rows - 1, Math.ceil((Math.max(ay, by) + half) / mmPx) + 1);
+    for (let y = r0; y <= r1; y++) {
+      for (let x = c0; x <= c1; x++) {
+        const px = (x + 0.5) * mmPx, py = (y + 0.5) * mmPx;
+        const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (len * len)));
+        const d = Math.hypot(px - ax - t * dx, py - ay - t * dy);
+        if (d >= half) continue;
+        const e = half - d;
+        let z = heightMm * Math.sqrt(Math.max(0, 1 - Math.max(0, 1 - e / shoulder) ** 2));
+        // passing under: low through the crossing and a small gap either side, then a smooth rise
+        let k = 1;
+        for (const u of unders) {
+          const along = Math.abs(t - u) * len;
+          if (along < gapR) k = Math.min(k, 0.15);
+          else if (along < dipR) {
+            const f = (along - gapR) / (dipR - gapR);
+            k = Math.min(k, 0.15 + 0.85 * f * f * (3 - 2 * f));
+          }
+        }
+        z *= k;
+        const i = y * cols + x;
+        if (z > top[i]!) {
+          top[i] = z;
+          win[i] = strand[si]!;
+        }
+      }
+    }
+  });
+  // the double-line groove follows the band that is on top, so it runs straight through corners
+  const groove = new Float32Array(cols * rows);
+  segs.forEach((s, si) => {
+    const [[ax, ay], [bx, by]] = s;
+    const c0 = Math.max(0, Math.floor((Math.min(ax, bx) - grooveHalf) / mmPx) - 1);
+    const c1 = Math.min(cols - 1, Math.ceil((Math.max(ax, bx) + grooveHalf) / mmPx) + 1);
+    const r0 = Math.max(0, Math.floor((Math.min(ay, by) - grooveHalf) / mmPx) - 1);
+    const r1 = Math.min(rows - 1, Math.ceil((Math.max(ay, by) + grooveHalf) / mmPx) + 1);
+    for (let y = r0; y <= r1; y++) for (let x = c0; x <= c1; x++) {
+      const i = y * cols + x;
+      if (win[i] !== strand[si]) continue;
+      const d = distSeg((x + 0.5) * mmPx, (y + 0.5) * mmPx, s);
+      if (d < grooveHalf) groove[i] = Math.max(groove[i]!, 0.45 * (1 - d / grooveHalf));
+    }
+  });
+  for (let i = 0; i < top.length; i++) {
+    if (top[i] === -Infinity) continue;
+    top[i] = top[i]! - heightMm * groove[i]! * Math.min(1, top[i]! / heightMm);
+    if (keep && !keep(((i % cols) + 0.5) * mmPx, (Math.floor(i / cols) + 0.5) * mmPx)) continue;
+    const z = ground + top[i]!;
+    if (z > h[i]!) h[i] = z;
   }
 }

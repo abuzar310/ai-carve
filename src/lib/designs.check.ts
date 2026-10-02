@@ -1,7 +1,7 @@
 import fs from "fs";
 import { CATEGORIES, DESIGNS, TITLES, applyDesign, resolveSrc, type Src } from "./designs";
 import { PHRASES, arabicKey, type QuranIndex } from "./quranSearch";
-import { BISMILLAH, NAMES_99, fitText, layoutPanel, sizeProblem } from "./textPanel";
+import { BISMILLAH, NAMES_99, fitText, layoutPanel, missingText, sizeProblem } from "./textPanel";
 
 let n = 0;
 function ok(cond: unknown, msg: string): void {
@@ -44,6 +44,8 @@ for (const d of DESIGNS) {
   else if (patternOnly) ok(spec.lines.length === 0, `${d.id}: a pattern panel without a centre carries no text`);
   else if (spec.template !== "names99") ok(spec.lines.length > 0 && spec.lines.every((l) => l.trim()), `${d.id}: lines filled`);
   ok(!sizeProblem(spec), `${d.id}: its size is allowed`);
+  // every design builds as it comes (a name design once the customer types the name)
+  ok(!missingText(d.ask === "name" ? { ...spec, lines: ["Abuzar"] } : spec), `${d.id}: can be built (not refused for missing text)`);
   if (spec.template === "pattern") {
     const lay = layoutPanel(spec);
     ok((lay.pattern?.segs.length ?? 0) > 20, `${d.id}: has its star pattern`);

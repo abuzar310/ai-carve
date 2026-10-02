@@ -161,7 +161,7 @@ export function restoreSpec(saved: string | null): PanelSpec {
     columns: Math.round(num(o.columns, 1, 20, d.columns)),
     pattern: pick(o.pattern, ["star8", "octagon8", "star6", "star12"] as const, d.pattern),
     repeats: num(o.repeats, 1, 12, d.repeats),
-    band: pick(o.band, ["raised", "double", "groove"] as const, d.band),
+    band: pick(o.band, ["raised", "double", "groove", "woven"] as const, d.band),
     medallion: pick(o.medallion, ["none", "circle"] as const, d.medallion),
     shape: pick(o.shape, ["rect", "arch", "oval"] as const, d.shape),
   };
@@ -812,4 +812,10 @@ export function composePanel(
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) out[i] = ((sm[i] ?? 0) - lo) / range;
   return { h: out, depthMm: +range.toFixed(2), heightsMm: sm };
+}
+
+/** True when the panel cannot be built because it has no text. Pattern panels carry their own design. */
+export function missingText(spec: PanelSpec): boolean {
+  if (spec.template === "names99" || spec.template === "pattern") return false;
+  return !spec.lines.some((l) => l.trim());
 }

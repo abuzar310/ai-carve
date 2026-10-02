@@ -202,6 +202,7 @@ function ShapeIcon({ shape }: { shape: Shape }) {
   );
 }
 const BANDS: { id: BandStyle; label: string; hint: string }[] = [
+  { id: "woven", label: "Woven", hint: "Over and under" },
   { id: "double", label: "Double line", hint: "Classic strapwork" },
   { id: "raised", label: "Raised band", hint: "One smooth band" },
   { id: "groove", label: "Grooved", hint: "Cut into the wood" },
@@ -400,7 +401,7 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
               <span>More, smaller stars</span>
             </small>
           </label>
-          <div className="seg" role="group" aria-label="Band style">
+          <div className="seg two" role="group" aria-label="Band style">
             {BANDS.map((b) => (
               <button key={b.id} type="button" aria-pressed={spec.band === b.id} onClick={() => set("band", b.id)}>
                 <strong>{b.label}</strong>

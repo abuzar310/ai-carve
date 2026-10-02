@@ -335,10 +335,10 @@ export const DESIGNS: readonly Design[] = [
   {
     id: "star-cross",
     title: "Star and cross",
-    hint: "The classic 8-point tile pattern",
+    hint: "Woven over and under, 8-point stars",
     category: "patterns",
     preview: { name: 0 },
-    spec: pat(400, 400, "star8", 3, { frameStyle: "classic" }),
+    spec: pat(400, 400, "star8", 3, { frameStyle: "classic", band: "woven" }),
   },
   {
     id: "khatam-door",

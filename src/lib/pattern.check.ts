@@ -93,4 +93,58 @@ for (const p of PATTERNS) {
   ok(bad.pattern === DEFAULT_SPEC.pattern && bad.repeats === 12 && bad.band === DEFAULT_SPEC.band && bad.medallion === "none", "unknown pattern values fall back, repeats clamped");
 }
 
+// ---- weaving: over and under
+{
+  const { weave, patternSegments, PATTERNS } = await import("./pattern");
+  // two lines crossing once: one goes under
+  const x = weave([[[0, 0], [10, 10]], [[0, 10], [10, 0]]]);
+  ok(x[0]!.length + x[1]!.length === 1, "two crossing lines: exactly one passes under");
+  // a 3 × 3 grid of long lines: every line alternates over, under, over
+  const grid: [[number, number], [number, number]][] = [];
+  for (const k of [2, 5, 8]) grid.push([[0, k], [10, k]], [[k, 0], [k, 10]]);
+  const g = weave(grid);
+  ok(g.reduce((s, u) => s + u.length, 0) === 9, "grid: each of the 9 crossings has one band under");
+  const pattern = (i: number) => {
+    const ts = [2, 5, 8].map((v) => v / 10);
+    return ts.map((t) => (g[i]!.some((u) => Math.abs(u - t) < 1e-9) ? "U" : "O")).join("");
+  };
+  ok(grid.every((_, i) => ["OUO", "UOU"].includes(pattern(i))), `grid: every line alternates (${grid.map((_, i) => pattern(i)).join(" ")})`);
+  // real patterns: every crossing decided once (one under per crossing), mostly alternating
+  for (const p of PATTERNS) {
+    const segs = patternSegments(p.id, { x0: 0, y0: 0, x1: 300, y1: 300 }, 3);
+    const u = weave(segs);
+    ok(u.every((list) => list.every((t) => t >= 0 && t <= 1)), `${p.id}: under positions on the segments`);
+    // each interior crossing (mid-segment) must have exactly one under side
+    let crossings = 0, decided = 0;
+    for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
+      const [[ax, ay], [bx, by]] = segs[i]!, [[cx, cy], [dx, dy]] = segs[j]!;
+      const rx = bx - ax, ry = by - ay, sx = dx - cx, sy = dy - cy, den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((cx - ax) * sy - (cy - ay) * sx) / den, w = ((cx - ax) * ry - (cy - ay) * rx) / den;
+      if (t <= 1e-6 || t >= 1 - 1e-6 || w <= 1e-6 || w >= 1 - 1e-6) continue;
+      crossings++;
+      const ui = u[i]!.some((v) => Math.abs(v - t) < 1e-9), uj = u[j]!.some((v) => Math.abs(v - w) < 1e-9);
+      if (ui !== uj) decided++;
+    }
+    ok(crossings === 0 || decided === crossings, `${p.id}: all ${crossings} crossings have exactly one band under (${decided})`);
+    ok(u.some((l) => l.length > 0), `${p.id}: something passes under`);
+  }
+  console.log("carve pattern.check weave OK");
+}
+
+ok(restoreSpec(JSON.stringify({ template: "pattern", band: "woven" })).band === "woven", "woven bands survive a refresh");
+{
+  // woven carving: crossings show a clear over and under (one band low, the other full height)
+  const { drawPattern } = await import("./pattern");
+  const N = 200, mm = 0.5;
+  const h = new Float32Array(N * N).fill(1);
+  drawPattern(h, N, N, mm, [[[10, 50], [90, 50]], [[50, 10], [50, 90]]], 1, 6, 2, "woven");
+  const at = (x: number, y: number) => h[Math.floor(y / mm) * N + Math.floor(x / mm)]!;
+  const armH = at(50, 50 - 5), armV = at(50 - 5, 50); // just beside the crossing on each band
+  ok(Math.abs(armH - armV) > 1, `one band dips beside the crossing (${armH.toFixed(2)} vs ${armV.toFixed(2)})`);
+  let peak = 0;
+  for (let y = 47; y <= 53; y += 0.5) for (let x = 47; x <= 53; x += 0.5) peak = Math.max(peak, at(x, y));
+  ok(peak > 2.8, `the over band keeps its full height across the crossing (${peak.toFixed(2)})`);
+  ok(Math.abs(at(20, 50) - at(50, 20)) < 0.05, "away from crossings both bands are the same height");
+}
 console.log(`carve pattern.check OK (${n} assertions)`);
