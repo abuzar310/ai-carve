@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DesignPicker } from "./DesignPicker";
 import { PatternArt } from "./PatternArt";
+import { LivePreview } from "./LivePreview";
 import { PATTERNS, type BandStyle } from "./lib/pattern";
 import type { Shape } from "./lib/shape";
 import { DEFAULT_SPEC, FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type Corners, type FontId, type FrameStyle, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
@@ -476,6 +477,8 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
       </div>
 
       </section>
+
+      <LivePreview spec={spec} />
 
       <div className="build-bar">
       {letterMm > 0 ? (

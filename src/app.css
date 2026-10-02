@@ -576,3 +576,10 @@ textarea.wants-input { border-color: var(--brass); box-shadow: 0 0 0 3px #c7751d
 .plaque.arch, .plaque.arch .plaque-face { border-radius: 50% 50% 3px 3px / 34% 34% 3px 3px }
 .plaque.oval, .plaque.oval .plaque-face { border-radius: 50% }
 .plaque.arch.flowers .plaque-face { background-image: radial-gradient(circle at 0 100%, transparent 21cqi, #8d673a66 21.5cqi, #f1dab380 22.5cqi, transparent 23cqi), radial-gradient(circle at 100% 100%, transparent 21cqi, #8d673a66 21.5cqi, #f1dab380 22.5cqi, transparent 23cqi), linear-gradient(165deg, #d9b682, #c89e68) }
+
+/* live layout preview in the text panel card */
+.live-preview { margin: 0; display: grid; gap: 6px; padding-top: 14px; border-top: 1px solid var(--line) }
+.live-preview img, .live-preview-empty { display: block; width: 100%; max-height: 420px; object-fit: contain; border-radius: 6px; border: 1px solid var(--line); background: #fffdf8 }
+.live-preview-empty { background: repeating-linear-gradient(135deg, #fffdf8 0 10px, #f4ecdd 10px 20px) }
+.live-preview figcaption { font-size: 12px; color: var(--mute) }
+.live-preview[aria-busy="true"] img { opacity: 0.75; transition: opacity 160ms ease }
