@@ -48,7 +48,7 @@ ornaments, ArtCAM .rlf + 16-bit TIFF + layered vectors, runs in the browser (pri
 1. **Home toolbox + example gallery** — tool cards (Photo → relief, Text plaque, Pattern panel,
    Sketch → vectors, Depth map → relief) with our own before/after renders and "Try this example"
    buttons that load a sample instantly. Original design; do not copy competitors' pages or images.
-2. **Sketch / logo → vectors** — upload line art, threshold, trace with `vector.ts` → DXF/SVG.
+2. ~~Sketch / logo → vectors~~ — DONE: "Trace to vectors" card under Image (`TraceCard.tsx`, `traceBitmap`).
 3. **Depth map → relief** — upload an existing height map (skip the AI), plus show/download the AI
    depth map next to the photo.
 4. **Photo prep** — 4-corner perspective straighten and crop (photos of carvings taken at an angle);
@@ -56,4 +56,7 @@ ornaments, ArtCAM .rlf + 16-bit TIFF + layered vectors, runs in the browser (pri
 5. **Recent projects** — local history (IndexedDB) to reopen past builds.
 6. **Material preview** — wood / marble / stone look in the 3D view, for showing clients.
 7. **UI languages** — Urdu, Arabic, Hindi (market: India / Middle East).
+From Carveco research: add a **background level (zero plane)** control to photo relief; ArtCAM PAF
+licences expire through 2026 — market AI Carve's .rlf export to ArtCAM shops. Carveco's Weave tool =
+our interlaced bands idea.
 Also open: interlaced pattern bands, more corner ornaments, names dictionary (needs an Arabic reader).

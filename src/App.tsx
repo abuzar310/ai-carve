@@ -16,6 +16,7 @@ import { outlineDxf } from "./lib/dxf";
 import { shapeContour } from "./lib/shape";
 import { letterOutlines, vectorsDxf, vectorsSvg, type VectorLayer } from "./lib/vector";
 import { TextPanelCard } from "./TextPanelCard";
+import { TraceCard } from "./TraceCard";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
 
@@ -143,6 +144,7 @@ export default function App() {
   const [letterMm, setLetterMm] = useState(0);
   const [flatPic, setFlatPic] = useState(false);
   const lastImg = useRef<HTMLImageElement | null>(null);
+  const [traceImg, setTraceImg] = useState<HTMLImageElement | null>(null);
   const [cutBg, setCutBg] = useState(true);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
   const [wireframe, setWireframe] = useState(false);
@@ -209,6 +211,7 @@ export default function App() {
       setBoard((b) => ({ ...b, ...boardForPiece(kind, iw, ih) }));
     }
     lastImg.current = img;
+    setTraceImg(img);
     {
       // a picture that is nearly one colour carves as a nearly flat board
       const h = next.height;
@@ -1164,6 +1167,7 @@ export default function App() {
               Cut plain background to 0 (when the picture has one)
             </label>
           </div>
+          <TraceCard img={traceImg} name={exportSource()} />
 
             </>
           ) : null}

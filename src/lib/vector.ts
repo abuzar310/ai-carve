@@ -191,3 +191,34 @@ export function vectorsSvg(layers: readonly VectorLayer[], widthMm: number, heig
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${num(widthMm)}mm" height="${num(heightMm)}mm" viewBox="0 0 ${num(widthMm)} ${num(heightMm)}">\n${body}\n</svg>\n`;
 }
+
+// ---------------------------------------------------------------- bitmap tracing (sketch / logo → vectors)
+
+export type TraceOptions = {
+  /** 0..1 brightness below which a pixel counts as ink */
+  threshold: number;
+  /** trace light lines on a dark background instead */
+  invert: boolean;
+  widthMm: number;
+  /** drop shapes smaller than this, mm² (pen specks, paper grain) */
+  minAreaMm2: number;
+  /** simplification tolerance, mm */
+  tolMm?: number;
+};
+
+/**
+ * Outlines of the ink in a picture, in mm. `lum` is brightness 0..1 per pixel. A soft ramp around the
+ * threshold keeps edges sub-pixel accurate instead of stair-stepped.
+ */
+export function traceBitmap(lum: Float32Array, cols: number, rows: number, o: TraceOptions): Pt[][] {
+  const soft = 0.06;
+  const ink = new Float32Array(lum.length);
+  for (let i = 0; i < lum.length; i++) {
+    const v = o.invert ? 1 - (lum[i] ?? 0) : lum[i] ?? 0;
+    ink[i] = Math.max(0, Math.min(1, (o.threshold - v) / soft + 0.5));
+  }
+  const k = o.widthMm / cols;
+  return traceContours(ink, cols, rows)
+    .filter((l) => Math.abs(loopArea(l)) * k * k >= o.minAreaMm2)
+    .map((l) => simplifyLoop(l.map(([x, y]) => [x * k, y * k] as Pt), o.tolMm ?? Math.max(0.02, k * 0.25)));
+}

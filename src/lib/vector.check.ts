@@ -1,4 +1,4 @@
-import { letterOutlines, loopArea, simplifyLoop, traceContours, vectorsDxf, vectorsSvg } from "./vector";
+import { letterOutlines, loopArea, simplifyLoop, traceBitmap, traceContours, vectorsDxf, vectorsSvg } from "./vector";
 
 let n = 0;
 function ok(cond: unknown, msg: string): void {
@@ -86,3 +86,26 @@ function disc(C: number, cx: number, cy: number, r: number, hole = 0): Float32Ar
   ok(svg.includes('fill-rule="evenodd"') && svg.includes('id="CUT_OUTLINE"'), "SVG: letters filled even-odd, layers as groups");
 }
 console.log(`carve vector.check OK (${n} assertions)`);
+
+// ---- sketch / logo tracing
+{
+  const C = 200;
+  // a dark ring (like a drawn letter O) on white paper, plus one pen speck
+  const ring = disc(C, 100, 100, 60, 35);
+  const lum = new Float32Array(C * C);
+  for (let i = 0; i < lum.length; i++) lum[i] = 1 - ring[i]! * 0.9; // ink is dark grey
+  lum[10 * C + 10] = 0.1; // speck
+  const opts = { threshold: 0.5, invert: false, widthMm: 100, minAreaMm2: 1 };
+  const loops = traceBitmap(lum, C, C, opts);
+  ok(loops.length === 2, `sketch: the ring traced as outer + inner outline (${loops.length})`);
+  const areas = loops.map((l) => Math.abs(loopArea(l))).sort((a, b) => b - a);
+  ok(Math.abs(areas[0]! - Math.PI * 30 * 30) / (Math.PI * 900) < 0.02, `sketch: outer size in mm (${areas[0]!.toFixed(0)} mm²)`);
+  ok(traceBitmap(lum, C, C, { ...opts, minAreaMm2: 0 }).length === 3, "with no speck filter the speck is kept");
+  // light lines on a dark board
+  const dark = lum.map((v) => 1 - v);
+  ok(traceBitmap(dark, C, C, { ...opts, invert: true }).length === 2, "inverted: light ink on dark traced the same");
+  // a pale scan where the threshold matters
+  const pale = lum.map((v) => 0.55 + v * 0.45);
+  ok(traceBitmap(pale, C, C, opts).length === 0 && traceBitmap(pale, C, C, { ...opts, threshold: 0.8 }).length === 2, "faint pencil needs a higher threshold, and then traces");
+}
+console.log(`carve vector.check tracing OK`);
