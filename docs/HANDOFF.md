@@ -2,7 +2,7 @@
 
 Owner: Mohammed Abuzar (GitHub `abuzar310`). Live: https://ai-carve.vercel.app
 Repo: github.com/abuzar310/ai-carve (**public** since 3 Oct 2026; no LICENSE file = all rights reserved). Push to `main` → Vercel deploys.
-Latest `main`: see `git log`. **Phases 0-1 of the UX rebuild are SHIPPED (f4dd446). Next job: Phase 2 (Image Relief workspace) in `docs/UX_REBUILD.md`.** Customers mostly order **name / text plaques**.
+Latest `main`: see `git log`. **UX rebuild: Phases 0-1 (f4dd446), 2 (c904064), 3 (9ab0d70), 5 (4d189c7) and 6 (b06e84e) are SHIPPED. Next: Phase 4 (dedicated pattern builder; /create/pattern currently presets star-cross in the text workspace) and Phase 7 (project model: IndexedDB photos, duplicate/delete, /project/:id).** Customers mostly order **name / text plaques**.
 
 ## What the site does now
 - **Photo relief:** picture → depth (own relief model `public/models/ai-carve-relief-v1`, falls back to
@@ -34,6 +34,14 @@ route as props (no store rewrite; every localStorage key unchanged). Home ships 
 chunks (App + transformers are lazy). `smoke.mjs` migrated to the new routes; `ONLY=1..6` runs a
 subset of sections.
 
+## Shipped 3 Oct 2026 - UX rebuild Phases 2, 3, 5, 6 (all live)
+Phase 2: Image Relief step workspace (jumpable rail Image-Size-Relief-Export, Size card with
+proportion-locked W/H + overall height, Advanced under Relief). Phase 3: 99 Names honest
+verification computed from layoutPanel on every change + [View exact text] proof inline.
+Phase 5: export verification (validate verdict, meshLag, mesh size MEASURED vs settings,
+triangles) + groups CNC files / Vectors / More exports. Phase 6: /create/depth-map is real -
+model skipped, brightness IS the height, Soon page deleted. smoke.mjs sections 7-10 cover them.
+
 ## Verify (the gate before every push)
 **`pnpm qa`** = browser smoke test (`scripts/qa/smoke.mjs`, 22 checks: home at 390/768/1024/1440,
 design list on a 6× slower CPU, every example tile builds, pattern-only design builds, exports offered).
@@ -42,6 +50,7 @@ sandbox add `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers LOCAL_ORT=1`.
 `pnpm check` (24 suites) · `npx tsc --noEmit` · `pnpm build` · Playwright on a 390 px phone.
 Sandbox: Chromium in `/opt/pw-browsers`; HF/CDN/Vercel blocked (serve ORT wasm via page.route).
 Always load the built page in a browser before pushing: a use-before-define in App.tsx once crashed the whole page while tsc and all unit tests passed.
+Use `node scripts/qa/static-run.mjs` (in-process static server + smoke in ONE node process, honors ONLY=n) in sandboxes. JSX text does NOT process \\uXXXX escapes - write real characters or they render literally (caught by screenshot once).
 Sandbox quirk (cost half a session): chromium + `vite preview` together get killed by a resource
 ceiling with NO output. Fix: serve `dist/` from a tiny in-process node http server with SPA fallback
 in the SAME process as Playwright (one node process), or run `smoke.mjs` in chunks with `ONLY=n`.
