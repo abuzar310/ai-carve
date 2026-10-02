@@ -7,7 +7,8 @@
     "dev": "vite --host --port 3030",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host --port 3030",
-    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/rlf.check.ts && tsx --no-warnings src/lib/bmp.check.ts && tsx --no-warnings src/lib/tif.check.ts && tsx --no-warnings src/lib/names.check.ts && tsx --no-warnings src/lib/mesh.check.ts && tsx --no-warnings src/lib/relief.check.ts && tsx --no-warnings src/lib/piece.check.ts && tsx --no-warnings src/lib/tiles.check.ts && tsx --no-warnings src/lib/ornament.check.ts && tsx --no-warnings src/lib/pattern.check.ts && tsx --no-warnings src/lib/shape.check.ts && tsx --no-warnings src/lib/dxf.check.ts && tsx --no-warnings src/lib/vector.check.ts && tsx --no-warnings src/lib/textPanel.check.ts && tsx --no-warnings src/lib/designs.check.ts && tsx --no-warnings src/lib/recent.check.ts && tsx --no-warnings src/lib/material.check.ts && tsx --no-warnings src/lib/quranSearch.check.ts && tsx --no-warnings src/lib/aiPick.check.ts && tsx --no-warnings src/lib/depthModel.check.ts"
+    "check": "tsx --no-warnings src/lib/height.check.ts && tsx --no-warnings src/lib/rlf.check.ts && tsx --no-warnings src/lib/bmp.check.ts && tsx --no-warnings src/lib/tif.check.ts && tsx --no-warnings src/lib/names.check.ts && tsx --no-warnings src/lib/mesh.check.ts && tsx --no-warnings src/lib/relief.check.ts && tsx --no-warnings src/lib/piece.check.ts && tsx --no-warnings src/lib/tiles.check.ts && tsx --no-warnings src/lib/ornament.check.ts && tsx --no-warnings src/lib/pattern.check.ts && tsx --no-warnings src/lib/shape.check.ts && tsx --no-warnings src/lib/dxf.check.ts && tsx --no-warnings src/lib/vector.check.ts && tsx --no-warnings src/lib/textPanel.check.ts && tsx --no-warnings src/lib/designs.check.ts && tsx --no-warnings src/lib/recent.check.ts && tsx --no-warnings src/lib/material.check.ts && tsx --no-warnings src/lib/quranSearch.check.ts && tsx --no-warnings src/lib/aiPick.check.ts && tsx --no-warnings src/lib/depthModel.check.ts",
+    "qa": "node scripts/qa/smoke.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
@@ -20,6 +21,7 @@
     "@types/react-dom": "^19.2.2",
     "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "playwright": "1.56.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vite": "^7.1.5"

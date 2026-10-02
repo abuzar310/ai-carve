@@ -1,8 +1,8 @@
-# AI Carve — handoff (updated 2 Oct 2026)
+# AI Carve — handoff (updated 3 Oct 2026)
 
 Owner: Mohammed Abuzar (GitHub `abuzar310`). Live: https://ai-carve.vercel.app
-Repo: github.com/abuzar310/ai-carve (private). Push to `main` → Vercel deploys.
-Latest `main`: `3c627ff`. Customers mostly order **name / text plaques**.
+Repo: github.com/abuzar310/ai-carve (**public** since 3 Oct 2026; no LICENSE file = all rights reserved). Push to `main` → Vercel deploys.
+Latest `main`: see `git log`. **Next job: the UX rebuild in `docs/UX_REBUILD.md`, Phase 0 then Phase 1.** Customers mostly order **name / text plaques**.
 
 ## What the site does now
 - **Photo relief:** picture → depth (own relief model `public/models/ai-carve-relief-v1`, falls back to
@@ -19,7 +19,17 @@ Latest `main`: `3c627ff`. Customers mostly order **name / text plaques**.
   **vectors DXF/SVG** (layers LETTERS, PATTERN, CUT_OUTLINE; `vector.ts`).
 - Kaggle training via GitHub Actions (`.github/workflows/kaggle-*.yml`, secret `KAGGLE_API_TOKEN`).
 
+## Added on 2–3 Oct 2026 (all live)
+Trace to vectors (TraceCard) · background level / zero plane · home example tiles (public/examples) ·
+woven star patterns · Recent designs (lib/recent.ts) · preview materials (lib/material.ts) ·
+security guard on api/* + headers · design-list freeze fix (no cqi font sizes) · calmer start
+(settings hidden until a picture/build) · og:image, robots.txt, sitemap · repo made public.
+
 ## Verify (the gate before every push)
+**`pnpm qa`** = browser smoke test (`scripts/qa/smoke.mjs`, 22 checks: home at 390/768/1024/1440,
+design list on a 6× slower CPU, every example tile builds, pattern-only design builds, exports offered).
+Run after `pnpm build` + `npx vite preview --port 4173 --strictPort &` in the same command; in the
+sandbox add `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers LOCAL_ORT=1`.
 `pnpm check` (24 suites) · `npx tsc --noEmit` · `pnpm build` · Playwright on a 390 px phone.
 Sandbox: Chromium in `/opt/pw-browsers`; HF/CDN/Vercel blocked (serve ORT wasm via page.route).
 Always load the built page in a browser before pushing: a use-before-define in App.tsx once crashed the whole page while tsc and all unit tests passed.
