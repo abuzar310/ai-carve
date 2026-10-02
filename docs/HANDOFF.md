@@ -55,7 +55,7 @@ ornaments, ArtCAM .rlf + 16-bit TIFF + layered vectors, runs in the browser (pri
    depth map next to the photo.
 4. **Photo prep** — 4-corner perspective straighten and crop (photos of carvings taken at an angle);
    auto "cut background" off when the picture has a frame (the user's 99 Names photo).
-5. **Recent projects** — local history (IndexedDB) to reopen past builds.
+5. ~~Recent projects~~ DONE: Recent tab in the design picker (`lib/recent.ts`, localStorage `carve.recent.v1`, last 12 builds).
 6. **Material preview** — wood / marble / stone look in the 3D view, for showing clients.
 7. **UI languages** — Urdu, Arabic, Hindi (market: India / Middle East).
 From Carveco research: ~~background level (zero plane)~~ DONE (Relief card slider, `zeroPlane` in relief.ts); ArtCAM PAF

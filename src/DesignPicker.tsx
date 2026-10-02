@@ -3,6 +3,7 @@ import { CATEGORIES, DESIGNS, applyDesign, resolveSrc, type Category, type Desig
 import { FONTS, type PanelSpec } from "./lib/textPanel";
 import type { QuranIndex } from "./lib/quranSearch";
 import { loadFont } from "./lib/textRaster";
+import { RECENT_KEY, ago, parseRecent, recentTitle, type Recent } from "./lib/recent";
 import { PatternArt } from "./PatternArt";
 
 type Props = {
@@ -13,6 +14,9 @@ type Props = {
   onPicked: (d: Design) => void;
   startOpen: boolean;
 };
+
+/** A recent build shown with the same card as a ready-made design. */
+const asDesign = (r: Recent): Design => ({ id: `recent-${r.at}`, title: recentTitle(r.spec), hint: "", category: "home", preview: { bismillah: true }, spec: r.spec });
 
 const size = (d: Design) => `${d.spec.widthMm ?? 600} × ${d.spec.heightMm ?? 600} mm`;
 
@@ -41,7 +45,8 @@ function Plaque({ d, text, small }: { d: Design; text: string; small?: boolean }
 
 export function DesignPicker({ spec, setSpec, loadQuran, onPicked, startOpen }: Props) {
   const [open, setOpen] = useState(startOpen);
-  const [cat, setCat] = useState<Category>("home");
+  const [recent, setRecent] = useState<Recent[]>([]);
+  const [cat, setCat] = useState<Category | "recent">("home");
   const [index, setIndex] = useState<QuranIndex | null>(null);
   const [picked, setPicked] = useState<Design | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -49,13 +54,31 @@ export function DesignPicker({ spec, setSpec, loadQuran, onPicked, startOpen }: 
 
   useEffect(() => {
     if (!open) return;
+    // what this browser built before: shown first, so a repeat order is one tap
+    let r: Recent[] = [];
+    try {
+      r = parseRecent(localStorage.getItem(RECENT_KEY));
+    } catch {
+      r = [];
+    }
+    setRecent(r);
+    if (r.length) setCat((c) => (c === "home" ? "recent" : c));
     // fonts for the previews, and the library for Quran previews (already prefetched by the app)
     void loadFont("naskh").catch(() => {});
     void loadFont("quran").catch(() => {});
     if (!index) loadQuran().then(setIndex, () => {});
   }, [open, index, loadQuran]);
 
-  const shown = useMemo(() => DESIGNS.filter((d) => d.category === cat), [cat]);
+  const shown = useMemo(() => (cat === "recent" ? [] : DESIGNS.filter((d) => d.category === cat)), [cat]);
+  const now = Date.now();
+
+  function pickRecent(r: Recent) {
+    const d = asDesign(r);
+    setSpec(() => r.spec);
+    setPicked(d);
+    setOpen(false);
+    onPicked(d);
+  }
   const previewOf = (d: Design) => resolveSrc(d.preview, index) ?? (d.ask === "name" ? "محمد" : "…");
 
   async function pick(d: Design) {
@@ -116,6 +139,11 @@ export function DesignPicker({ spec, setSpec, loadQuran, onPicked, startOpen }: 
         </button>
       </div>
       <div className="design-cats" role="group" aria-label="Design type">
+        {recent.length ? (
+          <button type="button" aria-pressed={cat === "recent"} onClick={() => setCat("recent")}>
+            Recent
+          </button>
+        ) : null}
         {CATEGORIES.map((c) => (
           <button key={c.id} type="button" aria-pressed={cat === c.id} onClick={() => setCat(c.id)}>
             {c.label}
@@ -123,6 +151,18 @@ export function DesignPicker({ spec, setSpec, loadQuran, onPicked, startOpen }: 
         ))}
       </div>
       <ul className="design-list" id="design-list">
+        {cat === "recent"
+          ? recent.map((r) => (
+              <li key={r.at + recentTitle(r.spec)}>
+                <button type="button" className="design-card" onClick={() => pickRecent(r)}>
+                  <Plaque d={asDesign(r)} text={recentTitle(r.spec)} />
+                  <span className="design-title" dir="auto">{recentTitle(r.spec)}</span>
+                  <span className="design-hint">Built {ago(r.at, now)}</span>
+                  <span className="design-size nums">{size(asDesign(r))}</span>
+                </button>
+              </li>
+            ))
+          : null}
         {shown.map((d) => (
           <li key={d.id}>
             <button type="button" className="design-card" onClick={() => void pick(d)} disabled={!!busy} aria-busy={busy === d.id}>

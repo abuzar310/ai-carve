@@ -17,6 +17,7 @@ import { shapeContour } from "./lib/shape";
 import { letterOutlines, vectorsDxf, vectorsSvg, type VectorLayer } from "./lib/vector";
 import { TextPanelCard } from "./TextPanelCard";
 import { TraceCard } from "./TraceCard";
+import { RECENT_KEY, addRecent, parseRecent } from "./lib/recent";
 import { applyDesign, designById, resolveSrc } from "./lib/designs";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
@@ -708,6 +709,12 @@ export default function App() {
       setBoard({ widthMm: textSpec.widthMm, heightMm: textSpec.heightMm, depthMm: f.depthMm, baseMm: 0 });
       setRaw({ height: f.h, alpha: null, depth: null, cols: f.cols, rows: f.rows, invert: false, exact: true });
       setBuiltSpec(textSpec);
+      try {
+        // remembered in this browser only, for repeat orders (Recent tab in the design picker)
+        localStorage.setItem(RECENT_KEY, JSON.stringify(addRecent(parseRecent(localStorage.getItem(RECENT_KEY)), textSpec, Date.now())));
+      } catch {
+        /* private mode or full storage: nothing to remember */
+      }
       revealResult();
       setLetterMm(f.letterMm);
       setCutPass((n) => n + 1);
