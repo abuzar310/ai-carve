@@ -13,6 +13,8 @@ import { reliefTif } from "./lib/tif";
 import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, restoreSpec, sizeProblem, type PanelSpec } from "./lib/textPanel";
 import { proofPng, rasterPanel } from "./lib/textRaster";
 import { outlineDxf } from "./lib/dxf";
+import { shapeContour } from "./lib/shape";
+import { letterOutlines, vectorsDxf, vectorsSvg, type VectorLayer } from "./lib/vector";
 import { TextPanelCard } from "./TextPanelCard";
 import { artcamNames } from "./lib/names";
 import { canShareFile, saveFile } from "./lib/download";
@@ -710,6 +712,43 @@ export default function App() {
       setNote(`Cut outline downloaded · ${ps.widthMm} × ${ps.heightMm} mm · use it for the profile cut`);
     } catch (e) {
       setErr(sayErr(e));
+    }
+  }
+
+  /** Letter outlines, pattern centre lines and the cut outline as vectors, for V-carve toolpaths. */
+  async function saveVectors(fmt: "dxf" | "svg") {
+    setErr("");
+    try {
+      setBusy("Tracing letters");
+      const ps = builtSpec ?? textSpec;
+      const lay = layoutPanel(ps);
+      const W = ps.widthMm;
+      const H = ps.heightMm;
+      // about 0.1 mm per pixel, capped so phones keep enough memory
+      const { cols, rows } = gridFor(W, H, Math.min(2800, Math.ceil(Math.max(W, H) / 0.1)));
+      const { masks } = await rasterPanel(lay, cols, rows);
+      const ink = new Float32Array(cols * rows);
+      for (let i = 0; i < ink.length; i++) ink[i] = Math.max(masks.text[i] ?? 0, masks.header[i] ?? 0);
+      const letters = letterOutlines(ink, cols, rows, W);
+      const layers: VectorLayer[] = [{ name: "LETTERS", color: 7, closed: true, paths: letters }];
+      if (lay.pattern) {
+        const med = lay.medallion;
+        const clear = (x: number, y: number) =>
+          (!med || Math.hypot(x - med.cx, y - med.cy) > med.r) && !lay.pockets.some((q) => Math.hypot(x - q.cx, y - q.cy) < q.r);
+        const segs = lay.pattern.segs.filter(([[ax, ay], [bx, by]]) => clear((ax + bx) / 2, (ay + by) / 2));
+        layers.push({ name: "PATTERN", color: 5, closed: false, paths: segs.map(([a, b]) => [a, b]) });
+      }
+      const shape = ps.template === "plate" || ps.template === "pattern" ? ps.shape : "rect";
+      layers.push({ name: "CUT_OUTLINE", color: 1, closed: true, paths: [shapeContour(shape, W, H, 0, 360).slice(0, -1)] });
+      const stem = artcamNames(exportSource(), W, H, board.depthMm, 0).bmp.replace(/\.bmp$/, "");
+      if (fmt === "dxf") await saveFile(`${stem}-vectors.dxf`, new Blob([vectorsDxf(layers, W, H)], { type: "application/dxf" }), "application/dxf");
+      else await saveFile(`${stem}-vectors.svg`, new Blob([vectorsSvg(layers, W, H)], { type: "image/svg+xml" }), "image/svg+xml");
+      const parts = [`${letters.length} letter outlines`, lay.pattern ? "pattern lines" : "", "cut outline"].filter(Boolean).join(", ");
+      setNote(`Vectors downloaded (${fmt.toUpperCase()}) · ${parts}, in mm on separate layers`);
+    } catch (e) {
+      setErr(sayErr(e));
+    } finally {
+      setBusy("");
     }
   }
 
@@ -1415,6 +1454,15 @@ export default function App() {
                         Cut outline (.dxf)
                       </button>
                       <p className="meta">The panel's edge as a vector, for the profile cut{(builtSpec ?? textSpec).shape !== "rect" && ((builtSpec ?? textSpec).template === "plate" || (builtSpec ?? textSpec).template === "pattern") ? " around the arch or oval" : ""}.</p>
+                      <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveVectors("dxf")}>
+                        Vectors for V-carve (.dxf)
+                      </button>
+                      <p className="meta">
+                        Letter outlines{(builtSpec ?? textSpec).template === "pattern" ? ", pattern centre lines" : ""} and the cut outline on separate layers, in mm.{" "}
+                        <button type="button" className="linkish" disabled={!!busy} onClick={() => void saveVectors("svg")}>
+                          Also as SVG
+                        </button>
+                      </p>
                       <button type="button" className="btn ghost full" disabled={!!busy} onClick={() => void saveProof()}>
                         Proof image
                       </button>
