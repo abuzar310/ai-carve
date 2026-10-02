@@ -2,7 +2,7 @@
 
 Owner: Mohammed Abuzar (GitHub `abuzar310`). Live: https://ai-carve.vercel.app
 Repo: github.com/abuzar310/ai-carve (**public** since 3 Oct 2026; no LICENSE file = all rights reserved). Push to `main` → Vercel deploys.
-Latest `main`: see `git log`. **UX rebuild: Phases 0-1 (f4dd446), 2 (c904064), 3 (9ab0d70), 5 (4d189c7) and 6 (b06e84e) are SHIPPED. Next: Phase 4 (dedicated pattern builder; /create/pattern currently presets star-cross in the text workspace) and Phase 7 (project model: IndexedDB photos, duplicate/delete, /project/:id).** Customers mostly order **name / text plaques**.
+Latest `main`: see `git log`. **UX rebuild SHIPPED: Phases 0-1 (f4dd446), 2 (c904064), 3 (9ab0d70), 5 (4d189c7), 6 (b06e84e), 7-text (ba59ccf: Projects tabs + Duplicate/Delete + /project/:id for text panels). REMAINING: Phase 4 (dedicated pattern builder; /create/pattern presets star-cross in the text workspace, which works), Phase 7-photo (IndexedDB image storage so photo reliefs become projects), Phase 8 (formal all-screens pass at 390/768/1024/1440; home + workspace already reviewed). Smoke sections 1-11 all green via `node scripts/qa/static-run.mjs` with ONLY=n.** Customers mostly order **name / text plaques**.
 
 ## What the site does now
 - **Photo relief:** picture → depth (own relief model `public/models/ai-carve-relief-v1`, falls back to
