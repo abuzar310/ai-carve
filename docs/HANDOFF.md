@@ -2,7 +2,7 @@
 
 Owner: Mohammed Abuzar (GitHub `abuzar310`). Live: https://ai-carve.vercel.app
 Repo: github.com/abuzar310/ai-carve (**public** since 3 Oct 2026; no LICENSE file = all rights reserved). Push to `main` → Vercel deploys.
-Latest `main`: see `git log`. **Next job: the UX rebuild in `docs/UX_REBUILD.md`, Phase 0 then Phase 1.** Customers mostly order **name / text plaques**.
+Latest `main`: see `git log`. **Phases 0-1 of the UX rebuild are SHIPPED (f4dd446). Next job: Phase 2 (Image Relief workspace) in `docs/UX_REBUILD.md`.** Customers mostly order **name / text plaques**.
 
 ## What the site does now
 - **Photo relief:** picture → depth (own relief model `public/models/ai-carve-relief-v1`, falls back to
@@ -25,6 +25,15 @@ woven star patterns · Recent designs (lib/recent.ts) · preview materials (lib/
 security guard on api/* + headers · design-list freeze fix (no cqi font sizes) · calmer start
 (settings hidden until a picture/build) · og:image, robots.txt, sitemap · repo made public.
 
+## Shipped 3 Oct 2026 - UX rebuild Phase 0+1 (f4dd446, live)
+Router (`src/router.tsx`, no dependency) - app shell (`src/Shell.tsx`) with top nav + mobile bottom
+nav (hidden inside a workspace) - pages (`src/pages.tsx`: Home, Create, Projects, Settings, Depth-map
+soon, Not-found) - `vercel.json` SPA rewrite (deep routes survive refresh, `/api/*` excluded).
+State is shared across routes by keeping the engine (App.tsx) mounted-but-hidden and passing the
+route as props (no store rewrite; every localStorage key unchanged). Home ships no engine/model
+chunks (App + transformers are lazy). `smoke.mjs` migrated to the new routes; `ONLY=1..6` runs a
+subset of sections.
+
 ## Verify (the gate before every push)
 **`pnpm qa`** = browser smoke test (`scripts/qa/smoke.mjs`, 22 checks: home at 390/768/1024/1440,
 design list on a 6× slower CPU, every example tile builds, pattern-only design builds, exports offered).
@@ -33,6 +42,9 @@ sandbox add `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers LOCAL_ORT=1`.
 `pnpm check` (24 suites) · `npx tsc --noEmit` · `pnpm build` · Playwright on a 390 px phone.
 Sandbox: Chromium in `/opt/pw-browsers`; HF/CDN/Vercel blocked (serve ORT wasm via page.route).
 Always load the built page in a browser before pushing: a use-before-define in App.tsx once crashed the whole page while tsc and all unit tests passed.
+Sandbox quirk (cost half a session): chromium + `vite preview` together get killed by a resource
+ceiling with NO output. Fix: serve `dist/` from a tiny in-process node http server with SPA fallback
+in the SAME process as Playwright (one node process), or run `smoke.mjs` in chunks with `ONLY=n`.
 Playwright quirk: the sticky Build bar blocks `locator.click()` on phones — scroll to centre and use
 `page.mouse.click`. Background servers die between tool calls: start `vite preview` in the same command.
 
