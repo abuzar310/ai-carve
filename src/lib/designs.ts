@@ -6,12 +6,13 @@
 import { BISMILLAH, DEFAULT_SPEC, NAMES_99, type PanelSpec } from "./textPanel";
 import { PHRASES, forFont, type QuranIndex } from "./quranSearch";
 
-export type Category = "home" | "quran" | "dhikr" | "boards";
+export type Category = "home" | "quran" | "dhikr" | "boards" | "patterns";
 export const CATEGORIES: readonly { id: Category; label: string }[] = [
   { id: "home", label: "Names & home" },
   { id: "quran", label: "Quran" },
   { id: "dhikr", label: "Dhikr" },
   { id: "boards", label: "Boards" },
+  { id: "patterns", label: "Patterns" },
 ];
 
 /** Where a line of text comes from. */
@@ -64,6 +65,24 @@ const plaque = (w: number, h: number, more: Partial<PanelSpec> = {}): Partial<Pa
   sections: false,
   header: "",
   footer: "",
+  ...more,
+});
+
+/** A star-pattern panel; `more` adds a medallion, a different band or frame. */
+const pat = (w: number, h: number, pattern: PanelSpec["pattern"], repeats: number, more: Partial<PanelSpec> = {}): Partial<PanelSpec> => ({
+  template: "pattern",
+  widthMm: w,
+  heightMm: h,
+  pattern,
+  repeats,
+  band: "double",
+  medallion: "none",
+  frame: true,
+  frameStyle: "stepped",
+  corners: "none",
+  header: "",
+  footer: "",
+  sections: false,
   ...more,
 });
 
@@ -279,6 +298,67 @@ export const DESIGNS: readonly Design[] = [
     preview: { phrase: "Muhammad" },
     spec: { template: "grid", widthMm: 500, heightMm: 260, columns: 2, font: "naskh", header: "", frame: true, frameStyle: "classic", corners: "none" },
     lines: [{ name: 0 }, { phrase: "Muhammad" }],
+  },
+
+  // ---- geometric patterns (lines are exact geometry; text only in a medallion)
+  {
+    id: "allah-sunburst",
+    title: "Allah in a 12-point star",
+    hint: "Round centre, star rays around it",
+    category: "patterns",
+    preview: { name: 0 },
+    spec: pat(500, 500, "star12", 1, { medallion: "circle", font: "naskh" }),
+    lines: [{ name: 0 }],
+  },
+  {
+    id: "star-cross",
+    title: "Star and cross",
+    hint: "The classic 8-point tile pattern",
+    category: "patterns",
+    preview: { name: 0 },
+    spec: pat(400, 400, "star8", 3, { frameStyle: "classic" }),
+  },
+  {
+    id: "khatam-door",
+    title: "Khatam door panel",
+    hint: "Tall panel for doors and cabinets",
+    category: "patterns",
+    preview: { name: 0 },
+    spec: pat(400, 800, "octagon8", 2),
+  },
+  {
+    id: "muhammad-star",
+    title: "Muhammad in an 8-point star",
+    hint: "Star-and-cross with a round centre",
+    category: "patterns",
+    preview: { phrase: "Muhammad" },
+    spec: pat(500, 500, "star8", 2, { medallion: "circle", font: "naskh" }),
+    lines: [{ phrase: "Muhammad" }],
+  },
+  {
+    id: "mashallah-khatam",
+    title: "Masha'Allah in a khatam star",
+    hint: "8-point stars around the centre",
+    category: "patterns",
+    preview: { phrase: "Mashallah" },
+    spec: pat(500, 500, "octagon8", 1.5, { medallion: "circle", font: "naskh" }),
+    lines: [{ phrase: "Mashallah" }],
+  },
+  {
+    id: "rosette-wall",
+    title: "12-point rosettes",
+    hint: "Rich wall panel",
+    category: "patterns",
+    preview: { name: 0 },
+    spec: pat(600, 600, "star12", 2),
+  },
+  {
+    id: "hex-screen",
+    title: "Hexagon screen",
+    hint: "6-point stars, cut as grooves",
+    category: "patterns",
+    preview: { name: 0 },
+    spec: pat(400, 600, "star6", 3, { band: "groove", frameStyle: "classic" }),
   },
 ];
 

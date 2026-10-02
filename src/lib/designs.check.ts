@@ -39,9 +39,17 @@ for (const d of DESIGNS) {
     if ("ref" in src && src.key) ok(arabicKey(t!.replace(/﴿[^﴾]*﴾/g, "")) === src.key, `${d.id}: ${src.ref} ${src.words?.join("-") ?? ""} is exactly "${src.key}" (got "${arabicKey(t!)}")`);
     if ("ref" in src && src.words) ok(!/[\u06d6-\u06dc\u06de\u06e9]/.test(t!), `${d.id}: no pause marks in a partial ayah`);
   }
+  const patternOnly = spec.template === "pattern" && spec.medallion === "none";
   if (d.ask === "name") ok(spec.lines.length === 0, `${d.id}: the name is left for the customer`);
+  else if (patternOnly) ok(spec.lines.length === 0, `${d.id}: a pattern panel without a centre carries no text`);
   else if (spec.template !== "names99") ok(spec.lines.length > 0 && spec.lines.every((l) => l.trim()), `${d.id}: lines filled`);
   ok(!sizeProblem(spec), `${d.id}: its size is allowed`);
+  if (spec.template === "pattern") {
+    const lay = layoutPanel(spec);
+    ok((lay.pattern?.segs.length ?? 0) > 20, `${d.id}: has its star pattern`);
+    ok((lay.pattern?.bandMm ?? 0) >= 3, `${d.id}: bands at least 3 mm wide`);
+  }
+  if (patternOnly) continue;
 
   // lays out, and with a stand-in measure the letters are a carvable size
   const lay = layoutPanel(spec.lines.length || d.ask !== "name" ? spec : { ...spec, lines: ["Abuzar"] });

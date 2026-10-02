@@ -9,9 +9,11 @@
  */
 import { gaussianBlur } from "./relief";
 import { cornerParts, drawParts, drawTube, pocketArc, type Pocket, type Pt } from "./ornament";
+import { drawPattern, patternSegments, type BandStyle, type PatternKind, type Seg } from "./pattern";
 
 export type LetterStyle = "raised" | "vcarve" | "flat";
-export type Template = "plate" | "names99" | "grid";
+export type Template = "plate" | "names99" | "grid" | "pattern";
+export type Medallion = "none" | "circle";
 export type FontId = "naskh" | "quran";
 export type FrameStyle = "classic" | "stepped";
 /** Corner decoration: "stars" = two rosettes in the header (header templates only). */
@@ -69,6 +71,12 @@ export type PanelSpec = {
   sections: boolean;
   /** grid only */
   columns: number;
+  /** pattern panel: which star pattern, how many repeats across the short side, band style */
+  pattern: PatternKind;
+  repeats: number;
+  band: BandStyle;
+  /** pattern panel: a plain round centre for text */
+  medallion: Medallion;
 };
 
 export const DEFAULT_SPEC: PanelSpec = {
@@ -86,11 +94,16 @@ export const DEFAULT_SPEC: PanelSpec = {
   footer: "",
   sections: false,
   columns: 4,
+  pattern: "star8",
+  repeats: 3,
+  band: "double",
+  medallion: "none",
 };
 
 /** Change template, resetting what belongs to the old one (the 99 Names board uses Naskh + Bismillah). */
 export function switchTemplate(spec: PanelSpec, t: Template): PanelSpec {
   if (t === "names99") return { ...spec, template: t, header: BISMILLAH, font: "naskh" };
+  if (t === "pattern") return { ...spec, template: t, header: "", footer: "", sections: false, corners: "none", lines: spec.medallion === "circle" ? spec.lines : [] };
   if (t === "plate") return { ...spec, template: t, header: "", footer: "", sections: false, lines: spec.lines.some((l) => l.trim()) ? spec.lines : ["بسم الله"] };
   return { ...spec, template: t, header: spec.header === BISMILLAH ? "" : spec.header };
 }
@@ -128,7 +141,7 @@ export function restoreSpec(saved: string | null): PanelSpec {
   const pick = <T,>(v: unknown, ok: readonly T[], def: T): T => (ok.includes(v as T) ? (v as T) : def);
   const num = (v: unknown, lo: number, hi: number, def: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
   return {
-    template: pick(o.template, ["names99", "plate", "grid"] as const, d.template),
+    template: pick(o.template, ["names99", "plate", "grid", "pattern"] as const, d.template),
     widthMm: num(o.widthMm, 1, 10000, d.widthMm),
     heightMm: num(o.heightMm, 1, 10000, d.heightMm),
     lines: Array.isArray(o.lines) ? o.lines.filter((l): l is string => typeof l === "string").slice(0, 200).map((l) => l.slice(0, 500)) : d.lines,
@@ -142,6 +155,10 @@ export function restoreSpec(saved: string | null): PanelSpec {
     footer: typeof o.footer === "string" ? o.footer.slice(0, 200) : d.footer,
     sections: typeof o.sections === "boolean" ? o.sections : d.sections,
     columns: Math.round(num(o.columns, 1, 20, d.columns)),
+    pattern: pick(o.pattern, ["star8", "octagon8", "star6", "star12"] as const, d.pattern),
+    repeats: num(o.repeats, 1, 12, d.repeats),
+    band: pick(o.band, ["raised", "double", "groove"] as const, d.band),
+    medallion: pick(o.medallion, ["none", "circle"] as const, d.medallion),
   };
 }
 
@@ -168,6 +185,9 @@ export type Layout = {
   tiles: Box[];
   items: TextItem[];
   stars: Star[];
+  /** pattern panel: the lines, their band width and style, and the plain centre (if any) */
+  pattern?: { segs: Seg[]; bandMm: number; band: BandStyle; box: Box };
+  medallion?: { cx: number; cy: number; r: number };
 };
 
 const inset = (b: Box, d: number): Box => ({ x0: b.x0 + d, y0: b.y0 + d, x1: b.x1 - d, y1: b.y1 - d });
@@ -274,6 +294,56 @@ export function layoutPanel(spec: PanelSpec): Layout {
   const ih = inner.y1 - inner.y0;
   const gap = Math.max(0.6, 0.0027 * m);
   const out: Layout = { widthMm: W, heightMm: H, frameMm, frameStyle: spec.frameStyle, beads: [], arcs: [], pockets: [], tiles: [], items: [], stars: [] };
+
+  if (spec.template === "pattern") {
+    out.beads.push(inner);
+    const repeats = Math.max(1, Math.min(12, spec.repeats));
+    const cell = Math.min(iw, ih) / repeats;
+    // band width follows the pattern size, kept carvable (≥ 3 mm) and not clumsy (≤ 12 mm)
+    const bandMm = Math.min(12, Math.max(3, cell * 0.05));
+    out.pattern = { segs: patternSegments(spec.pattern, inner, repeats), bandMm, band: spec.band, box: inner };
+    if (spec.corners === "flowers") {
+      const pr = Math.min(0.3 * Math.min(iw, ih), 0.2 * Math.max(iw, ih));
+      out.pockets = [
+        { cx: inner.x0, cy: inner.y0, sx: 1, sy: 1, r: pr },
+        { cx: inner.x1, cy: inner.y0, sx: -1, sy: 1, r: pr },
+        { cx: inner.x0, cy: inner.y1, sx: 1, sy: -1, r: pr },
+        { cx: inner.x1, cy: inner.y1, sx: -1, sy: -1, r: pr },
+      ];
+      out.arcs = out.pockets.map((p) => pocketArc(p));
+    }
+    const lines = spec.lines.map((l) => l.trim()).filter(Boolean);
+    if (spec.medallion === "circle") {
+      // the centre of every pattern is a star: the medallion sits inside it, so the star's points
+      // radiate around the text instead of being cut off (fewer repeats = a bigger centre)
+      const cx = (inner.x0 + inner.x1) / 2;
+      const cy = (inner.y0 + inner.y1) / 2;
+      let near = Infinity;
+      for (const [[ax, ay], [bx, by]] of out.pattern.segs) {
+        const dx = bx - ax, dy = by - ay;
+        const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / (dx * dx + dy * dy || 1e-12)));
+        near = Math.min(near, Math.hypot(cx - ax - t * dx, cy - ay - t * dy));
+      }
+      const r = Math.max(0.08 * Math.min(iw, ih), Math.min(near - bandMm * 1.3, 0.45 * Math.min(iw, ih)));
+      out.medallion = { cx, cy, r };
+      out.arcs.push(Array.from({ length: 97 }, (_, i) => [cx + r * Math.cos((i / 96) * 2 * Math.PI), cy + r * Math.sin((i / 96) * 2 * Math.PI)] as const));
+      // text sits in the circle's inscribed box, one row per line
+      const half = r * 0.74;
+      const n = Math.max(1, lines.length);
+      const rh = (2 * half * 0.86) / n;
+      const top = cy - half * 0.86;
+      lines.forEach((t, i) => {
+        const y0 = top + i * rh;
+        const y1 = y0 + rh;
+        // narrower rows near the top and bottom of the circle
+        const dy = Math.max(Math.abs(y0 - cy), Math.abs(y1 - cy));
+        const hw = Math.sqrt(Math.max(0, (r * 0.9) ** 2 - dy * dy));
+        out.items.push({ text: t, font: spec.font, box: { x0: cx - hw, y0, x1: cx + hw, y1 }, group: `med${i}`, role: "text", allowSplit: false });
+      });
+    }
+    out.items = out.items.map((it) => ({ ...it, text: quranMarks(it.text) }));
+    return out;
+  }
 
   if (spec.template === "plate") {
     out.beads.push(inner);
@@ -618,6 +688,15 @@ export function composePanel(
         }
       }
     }
+  }
+
+  // pattern panel: star-pattern bands, kept out of the medallion and the corner pockets
+  if (layout.pattern) {
+    const med = layout.medallion;
+    const keep = (x: number, y: number) =>
+      (!med || Math.hypot(x - med.cx, y - med.cy) > med.r + layout.pattern!.bandMm * 0.9) &&
+      !layout.pockets.some((p) => Math.hypot(x - p.cx, y - p.cy) < p.r + layout.pattern!.bandMm * 0.9);
+    drawPattern(h, cols, rows, mmPx, layout.pattern.segs, FIELD, layout.pattern.bandMm, letterMm * 1.1, layout.pattern.band, keep);
   }
 
   // arcs closing the corner pockets: the same round bead as the box lines

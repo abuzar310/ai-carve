@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DesignPicker } from "./DesignPicker";
+import { PatternArt } from "./PatternArt";
+import { PATTERNS, type BandStyle } from "./lib/pattern";
 import { DEFAULT_SPEC, FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type Corners, type FontId, type FrameStyle, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
 import { SURE, applyHit, search, type Hit, type QuranIndex } from "./lib/quranSearch";
 import { parseAiReply, type Candidate } from "./lib/aiPick";
@@ -181,6 +183,12 @@ const TEMPLATES: { id: Template; label: string; hint: string }[] = [
   { id: "names99", label: "99 Names", hint: "Bismillah + grid" },
   { id: "plate", label: "Name plate", hint: "Lines of text" },
   { id: "grid", label: "Word grid", hint: "One word per tile" },
+  { id: "pattern", label: "Pattern panel", hint: "Geometric stars" },
+];
+const BANDS: { id: BandStyle; label: string; hint: string }[] = [
+  { id: "double", label: "Double line", hint: "Classic strapwork" },
+  { id: "raised", label: "Raised band", hint: "One smooth band" },
+  { id: "groove", label: "Grooved", hint: "Cut into the wood" },
 ];
 const STYLES: { id: LetterStyle; label: string; hint: string }[] = [
   { id: "raised", label: "Raised", hint: "Rounded, sculpted" },
@@ -202,6 +210,10 @@ type Props = {
 
 export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, stale }: Props) {
   const set = <K extends keyof PanelSpec>(k: K, v: PanelSpec[K]) => setSpec((s) => ({ ...s, [k]: v }));
+  const isPattern = spec.template === "pattern";
+  const hasCentre = isPattern && spec.medallion === "circle";
+  /** font and letter style matter only when the panel carries text */
+  const showLetters = !isPattern || hasCentre;
   const textRef = useRef<HTMLTextAreaElement>(null);
   const [askName, setAskName] = useState(false);
   // a fresh panel opens the design list; saved work starts with it folded away
@@ -227,7 +239,7 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
       />
       <details className="custom-layout adv">
         <summary>Or start from a blank layout</summary>
-      <div className="seg" role="group" aria-label="Layout">
+      <div className="seg two" role="group" aria-label="Layout">
         {TEMPLATES.map((t) => (
           <button
             key={t.id}
@@ -246,16 +258,30 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
 
       <section className="step" aria-labelledby="step-text">
       <h4 id="step-text"><b aria-hidden="true">2</b> Text</h4>
-      <FindArabic spec={spec} setSpec={setSpec} />
+      {isPattern ? (
+        <div className="seg two" role="group" aria-label="Centre of the pattern">
+          <button type="button" aria-pressed={spec.medallion === "none"} onClick={() => set("medallion", "none")}>
+            <strong>Pattern only</strong>
+            <span>No text</span>
+          </button>
+          <button type="button" aria-pressed={spec.medallion === "circle"} onClick={() => set("medallion", "circle")}>
+            <strong>Round centre</strong>
+            <span>Text inside the middle star</span>
+          </button>
+        </div>
+      ) : null}
+      {!isPattern || hasCentre ? <FindArabic spec={spec} setSpec={setSpec} /> : null}
 
-      {spec.template === "names99" ? (
+      {isPattern && !hasCentre ? (
+        <small>A pattern panel carries no text. Choose “Round centre” to add a name or a word in the middle.</small>
+      ) : spec.template === "names99" ? (
         <small>
           All 99 Names with الله, in the traditional order and correct spelling, typeset with a real Arabic font, so every dot and
           hamza is exact.
         </small>
       ) : (
         <label className="field">
-          <span>{spec.template === "plate" ? (askName ? "Name (one line per row)" : "Text (one line per row)") : "Words (one per tile)"}</span>
+          <span>{isPattern ? "Text in the centre (one line per row)" : spec.template === "plate" ? (askName ? "Name (one line per row)" : "Text (one line per row)") : "Words (one per tile)"}</span>
           <textarea
             ref={textRef}
             className={askName && !spec.lines.some((l) => l.trim()) ? "wants-input" : undefined}
@@ -269,10 +295,12 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         </label>
       )}
 
-      <label className="field">
-        <span>{spec.template === "plate" ? "Title along the top (optional)" : "Header (optional)"}</span>
-        <input type="text" dir="auto" name="panel-header" autoComplete="off" value={spec.header} onChange={(e) => set("header", e.target.value)} />
-      </label>
+      {isPattern ? null : (
+        <label className="field">
+          <span>{spec.template === "plate" ? "Title along the top (optional)" : "Header (optional)"}</span>
+          <input type="text" dir="auto" name="panel-header" autoComplete="off" value={spec.header} onChange={(e) => set("header", e.target.value)} />
+        </label>
+      )}
       {spec.template === "plate" ? (
         <>
           <label className="field">
@@ -325,6 +353,37 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
 
       <section className="step" aria-labelledby="step-look">
       <h4 id="step-look"><b aria-hidden="true">4</b> Look</h4>
+      {isPattern ? (
+        <>
+          <div className="pattern-pick" role="group" aria-label="Pattern">
+            {PATTERNS.map((p) => (
+              <button key={p.id} type="button" aria-pressed={spec.pattern === p.id} onClick={() => set("pattern", p.id)}>
+                <PatternArt className="pattern-swatch" kind={p.id} repeats={2} />
+                <strong>{p.label}</strong>
+                <span>{p.hint}</span>
+              </button>
+            ))}
+          </div>
+          <label className="field">
+            <span>
+              Pattern size <em className="nums">{spec.repeats} across</em>
+            </span>
+            <input type="range" name="panel-repeats" min={1} max={8} step={0.5} value={spec.repeats} onChange={(e) => set("repeats", Number(e.target.value))} />
+            <small className="range-ends" aria-hidden="true">
+              <span>Bigger stars{hasCentre ? ", bigger centre" : ""}</span>
+              <span>More, smaller stars</span>
+            </small>
+          </label>
+          <div className="seg" role="group" aria-label="Band style">
+            {BANDS.map((b) => (
+              <button key={b.id} type="button" aria-pressed={spec.band === b.id} onClick={() => set("band", b.id)}>
+                <strong>{b.label}</strong>
+                <span>{b.hint}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
       {spec.font === "naskh" && spec.template !== "names99" && /[\u0671\u06d6-\u06dc\u06e1]/.test(spec.lines.join(" ")) ? (
         <p className="font-hint" role="note">
           This looks like Quran text. Its marks show best in the Quran script.{" "}
@@ -333,6 +392,7 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
           </button>
         </p>
       ) : null}
+      {showLetters ? (
       <label className="field">
         <span>Font</span>
         <select name="panel-font" value={spec.font} onChange={(e) => set("font", e.target.value as FontId)}>
@@ -344,6 +404,8 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
         </select>
       </label>
 
+      ) : null}
+      {showLetters ? (
       <div className="seg" role="group" aria-label="Letter style">
         {STYLES.map((s) => (
           <button key={s.id} type="button" aria-pressed={spec.style === s.id} onClick={() => set("style", s.id)}>
@@ -352,10 +414,11 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
           </button>
         ))}
       </div>
+      ) : null}
 
       <label className="field">
         <span>
-          {spec.style === "vcarve" ? "Carve depth" : "Letters raised by"} <em className="nums">{spec.letterMm.toFixed(1)}&nbsp;mm</em>
+          {!showLetters ? (spec.band === "groove" ? "Pattern cut depth" : "Pattern raised by") : spec.style === "vcarve" ? "Carve depth" : isPattern ? "Letters and pattern raised by" : "Letters raised by"} <em className="nums">{spec.letterMm.toFixed(1)}&nbsp;mm</em>
         </span>
         <input type="range" min={0.6} max={4} step={0.1} value={spec.letterMm} onChange={(e) => set("letterMm", Number(e.target.value))} />
       </label>

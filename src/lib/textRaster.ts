@@ -155,6 +155,27 @@ export async function proofPng(layout: Layout, longSide = 2000): Promise<Blob> {
     a.forEach(([x, y], i) => (i ? ctx.lineTo(x * k, y * k) : ctx.moveTo(x * k, y * k)));
     ctx.stroke();
   }
+  // pattern panel: the pattern's centre lines (the carving follows them at the band width)
+  if (layout.pattern) {
+    ctx.save();
+    ctx.strokeStyle = "#b39a76";
+    ctx.lineWidth = Math.max(1, layout.pattern.bandMm * k * 0.35);
+    const med = layout.medallion;
+    if (med) {
+      // keep the lines out of the centre, as the carving does
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.arc(med.cx * k, med.cy * k, (med.r + layout.pattern.bandMm * 0.9) * k, 0, Math.PI * 2, true);
+      ctx.clip("evenodd");
+    }
+    ctx.beginPath();
+    for (const [[ax, ay], [bx, by]] of layout.pattern.segs) {
+      ctx.moveTo(ax * k, ay * k);
+      ctx.lineTo(bx * k, by * k);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
   // corner ornaments: their outlines, so the proof shows where they sit
   ctx.strokeStyle = "#a88b5f";
   for (const p of layout.pockets) {

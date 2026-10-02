@@ -3,6 +3,7 @@ import { CATEGORIES, DESIGNS, applyDesign, resolveSrc, type Category, type Desig
 import { FONTS, type PanelSpec } from "./lib/textPanel";
 import type { QuranIndex } from "./lib/quranSearch";
 import { loadFont } from "./lib/textRaster";
+import { PatternArt } from "./PatternArt";
 
 type Props = {
   spec: PanelSpec;
@@ -19,17 +20,20 @@ const size = (d: Design) => `${d.spec.widthMm ?? 600} × ${d.spec.heightMm ?? 60
 function Plaque({ d, text, small }: { d: Design; text: string; small?: boolean }) {
   const w = d.spec.widthMm ?? 600;
   const h = d.spec.heightMm ?? 600;
-  const ratio = Math.min(2.6, Math.max(0.75, w / h));
+  const ratio = Math.min(2.6, Math.max(d.spec.template === "pattern" ? 0.5 : 0.75, w / h));
   const font = FONTS[d.spec.font === "quran" ? "quran" : "naskh"].family;
   const long = [...text].length > 18;
+  const pattern = d.spec.template === "pattern";
+  const medallion = pattern && d.spec.medallion === "circle";
   return (
     <span
       className={"plaque" + (small ? " small" : "") + (d.spec.corners === "flowers" ? " flowers" : "")}
       style={{ aspectRatio: String(ratio) }}
       aria-hidden="true"
     >
-      <span className="plaque-face" style={{ fontFamily: `${font}, "Amiri", serif` }} dir="rtl">
-        <span className={long ? "plaque-text long" : "plaque-text"}>{text}</span>
+      <span className={"plaque-face" + (pattern ? " has-pattern" : "")} style={{ fontFamily: `${font}, "Amiri", serif` }} dir="rtl">
+        {pattern ? <PatternArt className="plaque-pattern" kind={d.spec.pattern ?? "star8"} repeats={d.spec.repeats ?? 3} ratio={w / h} medallion={medallion} /> : null}
+        {!pattern || medallion ? <span className={long ? "plaque-text long" : "plaque-text"}>{text}</span> : null}
       </span>
     </span>
   );
