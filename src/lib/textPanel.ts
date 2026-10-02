@@ -10,6 +10,7 @@
 import { gaussianBlur } from "./relief";
 import { cornerParts, drawParts, drawTube, pocketArc, type Pocket, type Pt } from "./ornament";
 import { drawPattern, patternSegments, type BandStyle, type PatternKind, type Seg } from "./pattern";
+import { contentBox, insideShape, shapeContour, type Shape } from "./shape";
 
 export type LetterStyle = "raised" | "vcarve" | "flat";
 export type Template = "plate" | "names99" | "grid" | "pattern";
@@ -77,6 +78,8 @@ export type PanelSpec = {
   band: BandStyle;
   /** pattern panel: a plain round centre for text */
   medallion: Medallion;
+  /** Outline of the panel (plates and pattern panels; boards are always rectangles). */
+  shape: Shape;
 };
 
 export const DEFAULT_SPEC: PanelSpec = {
@@ -98,6 +101,7 @@ export const DEFAULT_SPEC: PanelSpec = {
   repeats: 3,
   band: "double",
   medallion: "none",
+  shape: "rect",
 };
 
 /** Change template, resetting what belongs to the old one (the 99 Names board uses Naskh + Bismillah). */
@@ -159,6 +163,7 @@ export function restoreSpec(saved: string | null): PanelSpec {
     repeats: num(o.repeats, 1, 12, d.repeats),
     band: pick(o.band, ["raised", "double", "groove"] as const, d.band),
     medallion: pick(o.medallion, ["none", "circle"] as const, d.medallion),
+    shape: pick(o.shape, ["rect", "arch", "oval"] as const, d.shape),
   };
 }
 
@@ -188,6 +193,8 @@ export type Layout = {
   /** pattern panel: the lines, their band width and style, and the plain centre (if any) */
   pattern?: { segs: Seg[]; bandMm: number; band: BandStyle; box: Box };
   medallion?: { cx: number; cy: number; r: number };
+  /** A shaped (arch / oval) panel: the outline, and how far in the inner bead runs. */
+  shape?: { kind: Shape; inset: number };
 };
 
 const inset = (b: Box, d: number): Box => ({ x0: b.x0 + d, y0: b.y0 + d, x1: b.x1 - d, y1: b.y1 - d });
@@ -289,29 +296,37 @@ export function layoutPanel(spec: PanelSpec): Layout {
   const m = Math.min(W, H);
   const frameMm = spec.frame ? +((spec.frameStyle === "stepped" ? 0.062 : 0.043) * m).toFixed(2) : 0;
   const pad = spec.frame ? 0.012 * m : 0.02 * m;
-  const inner: Box = { x0: frameMm + pad, y0: frameMm + pad, x1: W - frameMm - pad, y1: H - frameMm - pad };
+  // arch and oval outlines apply to plates and pattern panels; boards keep their rectangle
+  const shape: Shape = spec.template === "plate" || spec.template === "pattern" ? spec.shape : "rect";
+  const shaped = shape !== "rect";
+  const inset0 = frameMm + pad;
+  const inner: Box = shaped && spec.template === "plate" ? contentBox(shape, W, H, inset0) : { x0: inset0, y0: inset0, x1: W - inset0, y1: H - inset0 };
   const iw = inner.x1 - inner.x0;
   const ih = inner.y1 - inner.y0;
   const gap = Math.max(0.6, 0.0027 * m);
   const out: Layout = { widthMm: W, heightMm: H, frameMm, frameStyle: spec.frameStyle, beads: [], arcs: [], pockets: [], tiles: [], items: [], stars: [] };
+  if (shaped) out.shape = { kind: shape, inset: inset0 };
+  /** the bead inside the frame, following the outline */
+  const contourBead = () => (shaped ? [shapeContour(shape, W, H, inset0)] : []);
 
   if (spec.template === "pattern") {
-    out.beads.push(inner);
+    if (!shaped) out.beads.push(inner);
     const repeats = Math.max(1, Math.min(12, spec.repeats));
     const cell = Math.min(iw, ih) / repeats;
     // band width follows the pattern size, kept carvable (≥ 3 mm) and not clumsy (≤ 12 mm)
     const bandMm = Math.min(12, Math.max(3, cell * 0.05));
     out.pattern = { segs: patternSegments(spec.pattern, inner, repeats), bandMm, band: spec.band, box: inner };
-    if (spec.corners === "flowers") {
+    if (spec.corners === "flowers" && shape !== "oval") {
       const pr = Math.min(0.3 * Math.min(iw, ih), 0.2 * Math.max(iw, ih));
       out.pockets = [
         { cx: inner.x0, cy: inner.y0, sx: 1, sy: 1, r: pr },
         { cx: inner.x1, cy: inner.y0, sx: -1, sy: 1, r: pr },
         { cx: inner.x0, cy: inner.y1, sx: 1, sy: -1, r: pr },
         { cx: inner.x1, cy: inner.y1, sx: -1, sy: -1, r: pr },
-      ];
+      ].filter((p) => shape === "rect" || p.sy === -1) as Pocket[]; // an arch has no top corners
       out.arcs = out.pockets.map((p) => pocketArc(p));
     }
+    out.arcs.push(...contourBead());
     const lines = spec.lines.map((l) => l.trim()).filter(Boolean);
     if (spec.medallion === "circle") {
       // the centre of every pattern is a star: the medallion sits inside it, so the star's points
@@ -346,8 +361,8 @@ export function layoutPanel(spec: PanelSpec): Layout {
   }
 
   if (spec.template === "plate") {
-    out.beads.push(inner);
-    const flowers = spec.corners === "flowers";
+    if (!shaped) out.beads.push(inner);
+    const flowers = spec.corners === "flowers" && shape !== "oval";
     const header = spec.header.trim();
     const footer = spec.footer.trim();
     // corner pockets: one size for the whole plate
@@ -356,20 +371,24 @@ export function layoutPanel(spec: PanelSpec): Layout {
     let bottom = inner.y1;
     if (header) {
       const hh = Math.min(0.22 * ih, Math.max(0.14 * ih, 0.09 * iw));
-      const hp = headerParts({ ...spec, header, corners: flowers ? "flowers" : "none" }, inner.x0, inner.x1, inner.y0, hh);
-      out.beads.push(hp.box);
+      const hp = headerParts({ ...spec, header, corners: flowers && !shaped ? "flowers" : "none" }, inner.x0, inner.x1, inner.y0, hh);
+      if (!shaped) out.beads.push(hp.box); // under an arch the title sits free in the curve
       out.items.push(hp.item);
       out.pockets.push(...hp.pockets);
       top = inner.y0 + hh + 0.012 * ih;
-    } else if (flowers) {
+    } else if (flowers && !shaped) {
       out.pockets.push({ cx: inner.x0, cy: inner.y0, sx: 1, sy: 1, r: pr }, { cx: inner.x1, cy: inner.y0, sx: -1, sy: 1, r: pr });
     }
     if (flowers) {
       // under a title band the bottom flowers are smaller accents, leaving the text more room
       const br = header ? 0.62 * Math.min(pr, out.pockets[0]?.r ?? pr) : pr;
-      out.pockets.push({ cx: inner.x0, cy: inner.y1, sx: 1, sy: -1, r: br }, { cx: inner.x1, cy: inner.y1, sx: -1, sy: -1, r: br });
+      // an arch keeps its bottom corners; they are the frame's corners, not the text box's
+      const bx0 = shaped ? inset0 : inner.x0;
+      const bx1 = shaped ? W - inset0 : inner.x1;
+      const by = shaped ? H - inset0 : inner.y1;
+      out.pockets.push({ cx: bx0, cy: by, sx: 1, sy: -1, r: br }, { cx: bx1, cy: by, sx: -1, sy: -1, r: br });
     }
-    out.arcs = out.pockets.map((p) => pocketArc(p));
+    out.arcs = [...out.pockets.map((p) => pocketArc(p)), ...contourBead()];
     if (footer) {
       const fh = Math.max(0.07 * (bottom - top), Math.min(0.1 * (bottom - top), 0.05 * iw));
       const band = { x0: inner.x0, y0: bottom - fh, x1: inner.x1, y1: bottom };
@@ -653,8 +672,33 @@ export function composePanel(
   const h = new Float32Array(n).fill(FIELD);
   const k = layout.frameMm > 0 ? Math.min(1, Math.max(0.35, layout.frameMm / 26)) : 0;
 
+  // shaped panel: the outline, with the frame moulding following it (distance from the edge)
+  const sh = layout.shape;
+  if (sh) {
+    // measured on a grid with a one-pixel ring of "outside", so where the outline touches the
+    // picture's edge (the top of an oval or arch) the frame still runs along it
+    const pc = cols + 2;
+    const pr = rows + 2;
+    const inside = new Uint8Array(pc * pr);
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < cols; x++) inside[(y + 1) * pc + x + 1] = insideShape(sh.kind, layout.widthMm, layout.heightMm, (x + 0.5) * mmPx, (y + 0.5) * mmPx) ? 1 : 0;
+    const dt = distanceInside(inside, pc, pr);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      const j = (y + 1) * pc + x + 1;
+      if (!inside[j]) {
+        h[i] = 0; // cut away
+        continue;
+      }
+      const d = Math.max(0, (dt[j] ?? 0) - 0.5) * mmPx;
+      if (layout.frameMm > 0 && d < layout.frameMm) {
+        const z = layout.frameStyle === "stepped" ? interp(d / layout.frameMm, STEP_U, STEP_Z) : interp(d / layout.frameMm, FRAME_U, FRAME_Z);
+        h[i] = FIELD + (z - FIELD) * k;
+      }
+    }
+  }
   // frame moulding
-  if (layout.frameMm > 0) {
+  if (layout.frameMm > 0 && !sh) {
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const d = Math.min(x, cols - 1 - x, y, rows - 1 - y) * mmPx;
@@ -694,6 +738,7 @@ export function composePanel(
   if (layout.pattern) {
     const med = layout.medallion;
     const keep = (x: number, y: number) =>
+      (!sh || insideShape(sh.kind, layout.widthMm, layout.heightMm, x, y, sh.inset + layout.pattern!.bandMm)) &&
       (!med || Math.hypot(x - med.cx, y - med.cy) > med.r + layout.pattern!.bandMm * 0.9) &&
       !layout.pockets.some((p) => Math.hypot(x - p.cx, y - p.cy) < p.r + layout.pattern!.bandMm * 0.9);
     drawPattern(h, cols, rows, mmPx, layout.pattern.segs, FIELD, layout.pattern.bandMm, letterMm * 1.1, layout.pattern.band, keep);

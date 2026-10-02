@@ -27,7 +27,7 @@ function Plaque({ d, text, small }: { d: Design; text: string; small?: boolean }
   const medallion = pattern && d.spec.medallion === "circle";
   return (
     <span
-      className={"plaque" + (small ? " small" : "") + (d.spec.corners === "flowers" ? " flowers" : "")}
+      className={"plaque" + (small ? " small" : "") + (d.spec.corners === "flowers" ? " flowers" : "") + (d.spec.shape && d.spec.shape !== "rect" ? " " + d.spec.shape : "")}
       style={{ aspectRatio: String(ratio) }}
       aria-hidden="true"
     >

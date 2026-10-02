@@ -300,6 +300,28 @@ export const DESIGNS: readonly Design[] = [
     lines: [{ name: 0 }, { phrase: "Muhammad" }],
   },
 
+  // ---- shaped plaques
+  {
+    id: "arch-name",
+    title: "Arch name plaque",
+    hint: "Bismillah in the arch, name below",
+    category: "home",
+    preview: { phrase: "Muhammad" },
+    spec: plaque(300, 400, { font: "naskh", shape: "arch" }),
+    header: { bismillah: true },
+    lines: [],
+    ask: "name",
+  },
+  {
+    id: "oval-mashallah",
+    title: "Oval Masha'Allah",
+    hint: "Classic oval plaque",
+    category: "dhikr",
+    preview: { phrase: "Mashallah" },
+    spec: plaque(400, 260, { font: "naskh", shape: "oval", corners: "none", frameStyle: "classic" }),
+    lines: [{ phrase: "Mashallah" }],
+  },
+
   // ---- geometric patterns (lines are exact geometry; text only in a medallion)
   {
     id: "allah-sunburst",

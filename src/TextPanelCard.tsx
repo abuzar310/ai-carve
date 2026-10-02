@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { DesignPicker } from "./DesignPicker";
 import { PatternArt } from "./PatternArt";
 import { PATTERNS, type BandStyle } from "./lib/pattern";
+import type { Shape } from "./lib/shape";
 import { DEFAULT_SPEC, FONTS, SIZE_MAX, SIZE_MIN, sizeProblem, switchTemplate, type Corners, type FontId, type FrameStyle, type LetterStyle, type PanelSpec, type Template } from "./lib/textPanel";
 import { SURE, applyHit, search, type Hit, type QuranIndex } from "./lib/quranSearch";
 import { parseAiReply, type Candidate } from "./lib/aiPick";
@@ -185,6 +186,20 @@ const TEMPLATES: { id: Template; label: string; hint: string }[] = [
   { id: "grid", label: "Word grid", hint: "One word per tile" },
   { id: "pattern", label: "Pattern panel", hint: "Geometric stars" },
 ];
+const SHAPES: { id: Shape; label: string }[] = [
+  { id: "rect", label: "Rectangle" },
+  { id: "arch", label: "Arch top" },
+  { id: "oval", label: "Oval" },
+];
+function ShapeIcon({ shape }: { shape: Shape }) {
+  const d =
+    shape === "rect" ? "M5 4h22v16H5z" : shape === "arch" ? "M7 21V12a9 9 0 0 1 18 0v9z" : "M16 4c7.5 0 12 3.6 12 8s-4.5 8-12 8S4 16.4 4 12 8.5 4 16 4z";
+  return (
+    <svg className="shape-icon" viewBox="0 0 32 24" aria-hidden="true" focusable="false">
+      <path d={d} fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" />
+    </svg>
+  );
+}
 const BANDS: { id: BandStyle; label: string; hint: string }[] = [
   { id: "double", label: "Double line", hint: "Classic strapwork" },
   { id: "raised", label: "Raised band", hint: "One smooth band" },
@@ -320,6 +335,16 @@ export function TextPanelCard({ spec, setSpec, busy, built, letterMm, onBuild, s
 
       <section className="step" aria-labelledby="step-size">
       <h4 id="step-size"><b aria-hidden="true">3</b> Size</h4>
+      {spec.template === "plate" || isPattern ? (
+        <div className="seg" role="group" aria-label="Shape">
+          {SHAPES.map((sh) => (
+            <button key={sh.id} type="button" aria-pressed={spec.shape === sh.id} onClick={() => set("shape", sh.id)}>
+              <ShapeIcon shape={sh.id} />
+              <strong>{sh.label}</strong>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="pair keep">
         <label className="field">
           <span>
