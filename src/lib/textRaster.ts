@@ -132,6 +132,33 @@ export async function rasterPanel(layout: Layout, cols: number, rows: number): P
 }
 
 /** Flat black-on-white proof of the exact lettering, for checking spelling before carving. */
+/**
+ * Median height of the body lettering in mm (a tall letter: alif / capital H), measured the same
+ * way as after a build, but without drawing the panel. 0 when there is no text.
+ */
+export async function letterHeight(layout: Layout): Promise<number> {
+  const body = layout.items.filter((i) => i.role === "text");
+  if (!body.length) return 0;
+  await fontsFor(layout);
+  const pxmm = 12; // fine enough to agree with the built panel
+  const ctx = canvas2d(8, 8);
+  ctx.direction = "rtl";
+  const measure = (t: string, f: FontId, sizeMm: number) => {
+    ctx.font = fontCss(f, sizeMm * pxmm);
+    return ctx.measureText(t).width / pxmm;
+  };
+  const sizes = fitText(layout.items, measure)
+    .filter((o) => o.role === "text")
+    .map((o) => {
+      ctx.font = fontCss(o.font, o.sizeMm * pxmm);
+      const m = ctx.measureText(/[\u0600-\u06ff]/.test(o.text) ? "ا" : "H");
+      const ink = (m.actualBoundingBoxAscent ?? 0) + (m.actualBoundingBoxDescent ?? 0);
+      return ink > 0 ? ink / pxmm : o.sizeMm * 0.75;
+    })
+    .sort((x, y) => x - y);
+  return sizes.length ? sizes[Math.floor(sizes.length / 2)]! : 0;
+}
+
 export async function proofPng(layout: Layout, longSide = 2000): Promise<Blob> {
   await fontsFor(layout);
   const k = longSide / Math.max(layout.widthMm, layout.heightMm);
