@@ -56,7 +56,7 @@ ornaments, ArtCAM .rlf + 16-bit TIFF + layered vectors, runs in the browser (pri
 5. **Recent projects** — local history (IndexedDB) to reopen past builds.
 6. **Material preview** — wood / marble / stone look in the 3D view, for showing clients.
 7. **UI languages** — Urdu, Arabic, Hindi (market: India / Middle East).
-From Carveco research: add a **background level (zero plane)** control to photo relief; ArtCAM PAF
+From Carveco research: ~~background level (zero plane)~~ DONE (Relief card slider, `zeroPlane` in relief.ts); ArtCAM PAF
 licences expire through 2026 — market AI Carve's .rlf export to ArtCAM shops. Carveco's Weave tool =
 our interlaced bands idea.
 Also open: interlaced pattern bands, more corner ornaments, names dictionary (needs an Arabic reader).

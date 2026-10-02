@@ -166,3 +166,31 @@ ok(snapped[32 * N + 33]! - snapped[32 * N + 30]! > soft[32 * N + 33]! - soft[32 
 }
 
 console.log(`carve relief.check OK (${n} assertions)`);
+
+// Background level (zero plane): the background flattens to 0, the subject keeps the full depth.
+{
+  const { zeroPlane } = await import("./relief");
+  const C = 64;
+  const h = new Float32Array(C * C);
+  for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) {
+    const r = Math.hypot(x - 32, y - 32);
+    h[y * C + x] = r < 16 ? 0.4 + 0.6 * Math.cos((r / 16) * (Math.PI / 2)) : 0.15 + 0.1 * Math.sin(x * 0.7) * Math.sin(y * 0.5); // lumpy background
+  }
+  ok(zeroPlane(h, 0) === h, "level 0 leaves the relief untouched");
+  const z = zeroPlane(h, 0.3);
+  let bgMax = 0;
+  for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) if (Math.hypot(x - 32, y - 32) > 20) bgMax = Math.max(bgMax, z[y * C + x]!);
+  ok(bgMax === 0, `background below the level is flat at 0 (max ${bgMax})`);
+  ok(Math.abs(z[32 * C + 32]! - 1) < 0.05, `subject top still reaches the full depth (${z[32 * C + 32]!.toFixed(3)})`);
+  let worst = 0, src = 0;
+  for (let x = 1; x < C; x++) {
+    worst = Math.max(worst, Math.abs(z[32 * C + x]! - z[32 * C + x - 1]!));
+    src = Math.max(src, Math.abs(h[32 * C + x]! - h[32 * C + x - 1]!));
+  }
+  ok(worst <= src / (1 - 0.3) + 1e-6, `adds no cliff of its own (step ${worst.toFixed(3)} ≤ picture's ${src.toFixed(3)} × stretch)`);
+  let mono = true;
+  for (let i = 1; i < 200; i++) { const a = new Float32Array([i / 200]), b = new Float32Array([(i - 1) / 200]); if (zeroPlane(a, 0.3)[0]! < zeroPlane(b, 0.3)[0]!) mono = false; }
+  ok(mono, "higher stays higher (order of heights kept)");
+  ok(zeroPlane(h, 0.5).every((v) => v >= 0 && v <= 1 && Number.isFinite(v)), "stays within 0..1");
+}
+console.log("carve relief.check zero plane OK");

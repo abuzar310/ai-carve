@@ -515,3 +515,21 @@ export function composeRelief(input: ReliefInput, opts: ReliefOpts = {}): Float3
   }
   return robustNormalize(h, 0);
 }
+
+/**
+ * Background level ("zero plane"): everything below `level` (0..1 of the relief height) becomes the
+ * flat background at 0, and what stands above it is stretched back to the full depth. A soft knee
+ * (±`knee`) rounds the step so the subject rises from the background without a cliff. level 0 = off.
+ */
+export function zeroPlane(h: Float32Array, level: number, knee = 0.03): Float32Array {
+  const b = Math.max(0, Math.min(0.9, level));
+  if (b <= 0) return h;
+  const out = new Float32Array(h.length);
+  const span = 1 - b + knee;
+  for (let i = 0; i < h.length; i++) {
+    const v = (h[i] ?? 0) - b;
+    const u = v <= -knee ? 0 : v >= knee ? v : ((v + knee) * (v + knee)) / (4 * knee);
+    out[i] = Math.min(1, u / span);
+  }
+  return out;
+}

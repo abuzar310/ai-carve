@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { heightToImageData, rasterFromImage } from "./lib/height";
 import { applyContrast } from "./lib/refine";
-import { composeRelief, silhouette } from "./lib/relief";
+import { composeRelief, silhouette, zeroPlane } from "./lib/relief";
 import { activeDepthModel, estimateDepth } from "./lib/depth";
 import { PIECES, boardForPiece, circumferenceMm, detectPiece, type Piece } from "./lib/piece";
 import { QUALITY, buildRelief, constrainedPreview, fieldCols, isSurfaceOnly, restampRelief, triangleEstimate, type Quality, type ReliefMesh } from "./lib/mesh";
@@ -145,6 +145,8 @@ export default function App() {
   const [flatPic, setFlatPic] = useState(false);
   const lastImg = useRef<HTMLImageElement | null>(null);
   const [traceImg, setTraceImg] = useState<HTMLImageElement | null>(null);
+  /** Background level (zero plane), 0 = off. Photo relief only. */
+  const [zeroLevel, setZeroLevel] = useState(0);
   const [cutBg, setCutBg] = useState(true);
   const [board, setBoard] = useState({ widthMm: 100, heightMm: 100, depthMm: 3, baseMm: 0 });
   const [wireframe, setWireframe] = useState(false);
@@ -273,8 +275,8 @@ export default function App() {
       },
     );
     // A turned leg keeps its background at exactly 0, so contrast is not applied to it.
-    return turnedOn ? h : applyContrast(h, fieldOpts.contrast);
-  }, [raw, fieldOpts, turnedOn, cutBg]);
+    return turnedOn ? h : zeroPlane(applyContrast(h, fieldOpts.contrast), zeroLevel);
+  }, [raw, fieldOpts, turnedOn, cutBg, zeroLevel]);
 
   // Turned mode switched off (or piece changed) on a picture whose depth was skipped: estimate it now.
   useEffect(() => {
@@ -1151,6 +1153,13 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <label className="field" style={{ marginTop: 12 }}>
+              <span>
+                Background level <em className="nums">{zeroLevel ? `${Math.round(zeroLevel * 100)}%` : "off"}</em>
+              </span>
+              <input type="range" name="zero-plane" min={0} max={0.6} step={0.01} value={zeroLevel} onChange={(e) => setZeroLevel(Number(e.target.value))} />
+              <small>For bumpy backgrounds: slide right until the background is flat. Too far starts cutting thin parts of the subject — watch the 3D view.</small>
+            </label>
           </div>
           ) : null}
 
