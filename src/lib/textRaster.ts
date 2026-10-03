@@ -99,7 +99,7 @@ async function fontsFor(layout: Layout): Promise<void> {
   await Promise.all([...ids].map(loadFont));
 }
 
-export async function rasterPanel(layout: Layout, cols: number, rows: number): Promise<{ masks: Masks; ops: DrawOp[]; inkRatio: number; tightLines: number }> {
+export async function rasterPanel(layout: Layout, cols: number, rows: number, opts?: { markAware?: boolean }): Promise<{ masks: Masks; ops: DrawOp[]; inkRatio: number; tightLines: number }> {
   await fontsFor(layout);
   const ss = cols * rows * 4 <= 16_000_000 ? 2 : 1;
   const W = cols * ss;
@@ -111,7 +111,12 @@ export async function rasterPanel(layout: Layout, cols: number, rows: number): P
     ctx.font = fontCss(f, sizeMm * pxmm);
     return ctx.measureText(t).width / pxmm;
   };
-  const ops = fitText(layout.items, measure);
+  const inkOf = (t: string, f: FontId, sizeMm: number) => {
+    ctx.font = fontCss(f, sizeMm * pxmm);
+    const m = ctx.measureText(t);
+    return { asc: (m.actualBoundingBoxAscent ?? 0) / pxmm, desc: (m.actualBoundingBoxDescent ?? 0) / pxmm };
+  };
+  const ops = fitText(layout.items, measure, { ink: inkOf, markAware: opts?.markAware });
   for (const o of ops) {
     ctx.font = fontCss(o.font, o.sizeMm * pxmm);
     // height of a tall letter (alif / capital H) at this size: marks stacked above the letters don't count

@@ -493,7 +493,25 @@ function fits(measure: Measure, it: TextItem, size: number): boolean {
   return measure(it.text, it.font, size) <= it.box.x1 - it.box.x0;
 }
 
-export function fitText(items: readonly TextItem[], measure: Measure): DrawOp[] {
+export type InkMeasure = (t: string, f: FontId, sizeMm: number) => { asc: number; desc: number };
+
+export function fitText(
+  items: readonly TextItem[],
+  measure: Measure,
+  opts?: { ink?: InkMeasure; markAware?: boolean },
+): DrawOp[] {
+  const ink = opts?.markAware ? opts.ink : undefined;
+  /** Shrink until the line's FULL ink (vowel marks included) fits [y0, y1]; returns [size, baseline]. */
+  const vfit = (t: string, f: FontId, size: number, y0: number, y1: number, at: (s: number) => number): [number, number] => {
+    if (!ink) return [size, at(size)];
+    for (let i = 0; i < 40; i++) {
+      const b = at(size);
+      const m = ink(t, f, size);
+      if (b - m.asc >= y0 - 0.05 && b + m.desc <= y1 + 0.05) break;
+      size *= 0.97;
+    }
+    return [size, at(size)];
+  };
   const ops: DrawOp[] = [];
   const groups = new Map<string, TextItem[]>();
   for (const it of items) groups.set(it.group, [...(groups.get(it.group) ?? []), it]);
@@ -522,6 +540,19 @@ export function fitText(items: readonly TextItem[], measure: Measure): DrawOp[] 
           if (s2 > best.size * 1.05) best = { size: s2, lines };
         }
         if (best.lines.length > 1) {
+          if (ink) {
+            // mark-aware: shrink the whole block until every wrapped line's full ink fits its slot
+            for (let i = 0; i < 40; i++) {
+              const top0 = cy - (best.lines.length * LH * best.size) / 2;
+              const bad = best.lines.some((l, i2) => {
+                const b = top0 + (i2 * LH + 1) * best.size;
+                const m = ink(l, it.font, best.size);
+                return b - m.asc < top0 + i2 * LH * best.size - 0.05 || b + m.desc > top0 + (i2 + 1) * LH * best.size + 0.05;
+              });
+              if (!bad) break;
+              best.size *= 0.97;
+            }
+          }
           const top = cy - (best.lines.length * LH * best.size) / 2;
           best.lines.forEach((l, i) => ops.push({ text: l, font: it.font, cx, baseline: top + (i * LH + 1) * best.size, sizeMm: best.size, role: it.role }));
           continue;
@@ -537,7 +568,10 @@ export function fitText(items: readonly TextItem[], measure: Measure): DrawOp[] 
         ops.push({ text: l2, font: it.font, cx, baseline: cy + 0.92 * s2, sizeMm: s2, role: it.role });
         continue;
       }
-      ops.push({ text: it.text, font: it.font, cx, baseline: cy + 0.32 * size, sizeMm: size, role: it.role });
+      {
+        const [s3, b3] = vfit(it.text, it.font, size, it.box.y0, it.box.y1, (s) => cy + 0.32 * s);
+        ops.push({ text: it.text, font: it.font, cx, baseline: b3, sizeMm: s3, role: it.role });
+      }
     }
   }
   return ops;

@@ -653,7 +653,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   async function textField(longSide: number, spec: PanelSpec = textSpec) {
     const lay = layoutPanel(spec);
     const { cols, rows } = gridFor(spec.widthMm, spec.heightMm, longSide);
-    const { masks, ops, inkRatio, tightLines } = await rasterPanel(lay, cols, rows);
+    const markAware = typeof location !== "undefined" && new URLSearchParams(location.search).get("typo") === "mark";
+    const { masks, ops, inkRatio, tightLines } = await rasterPanel(lay, cols, rows, { markAware });
     const out = composePanel(lay, masks, cols, rows, spec.style, spec.letterMm);
     const sizes = ops.filter((o) => o.role === "text").map((o) => o.inkMm ?? o.sizeMm * 0.75).sort((a, b) => a - b);
     const letterMm = sizes.length ? sizes[Math.floor(sizes.length / 2)]! : 0;

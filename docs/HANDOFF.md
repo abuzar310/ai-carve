@@ -58,6 +58,11 @@ band sizes); the collision is real on the carved piece. Guard shipped: rasterPan
 line's FULL ink (marks included) and returns tightLines + inkRatio; the export verification shows
 'touching vowel marks' in red with the fix choices. A root redesign (mark-aware caps / line pitch)
 would change approved designs' look - owner's call, see UX_REBUILD open items.
+Typography follow-ups: mark-aware line fitting is implemented behind ?typo=mark (full ink incl.
+tashkeel must fit each line's band; wrapped blocks scale as one). Proven on the reported two-line
+panel (clearance red -> green); owner approval pending before it becomes the default (see
+outputs montage from 3 Oct). Four Quls stays red in BOTH modes: its line boxes themselves
+overlap - a layoutPanel sections issue, separate fix.
 Sandbox quirk (cost half a session): chromium + `vite preview` together get killed by a resource
 ceiling with NO output. Fix: serve `dist/` from a tiny in-process node http server with SPA fallback
 in the SAME process as Playwright (one node process), or run `smoke.mjs` in chunks with `ONLY=n`.
