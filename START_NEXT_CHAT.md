@@ -20,7 +20,20 @@ Clone the repo, then read before doing anything:
 
 The gate before EVERY push: pnpm check · npx tsc --noEmit · pnpm build · browser smoke
 (node scripts/qa/static-run.mjs, sections with ONLY=n) · look at screens at 390/768/1024/1440.
-The live site must work after every push. Arabic only from the library and real fonts; only
+The live site must work after every push.
+
+BEFORE deciding anything from memory or guessing: use your past-chats tools to read the big
+3 Oct 2026 session (search chats for "AI Carve"). Pull the specific context with these
+searches and read around the hits - do not reinvent or assume:
+- "stale export exportBlock drift"        -> the P1 bugs, their reproductions and the shared gate
+- "Four Quls box overlap layoutPanel"     -> why Quls fails in both modes (boxes, not type)
+- "mark-aware pitch Fatiha collapse"      -> the typography flag, why shrinking was wrong, sweep data
+- "99 Names 100 words structural Allah"   -> the 99/99 semantics decision and comparator tests
+- "lattice reconstruction vowel marks"    -> the customer STL forensics (tool: scripts/qa/stl-top.py)
+- "chromium vite preview killed static-run" -> sandbox limits and the chunked ONLY=n method
+- "busyRef synchronous claim paste"       -> input-exclusivity design and its deterministic test
+If a doc and the old chat ever disagree, the repo at HEAD is the truth; the chat is the
+reasoning behind it. Arabic only from the library and real fonts; only
 honest, computed verification ticks. One chat at a time on this repo; git fetch and compare
 before pushing. Work the queue in docs/HANDOFF.md in order, report after each shipped chunk,
 don't ask me to continue.
