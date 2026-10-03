@@ -114,6 +114,22 @@ export function LearnPage() {
         All values are millimetres. An STL file itself carries no unit — AI Carve writes millimetre values and the export panel says so,
         so set your CNC software to mm when importing.
       </p>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: [
+              { "@type": "Question", name: "Is AI Carve free?", acceptedAnswer: { "@type": "Answer", text: "Yes. Building and every export are free." } },
+              { "@type": "Question", name: "Where do my pictures go?", acceptedAnswer: { "@type": "Answer", text: "Nowhere. The relief is built in your browser; pictures are not uploaded to a server." } },
+              { "@type": "Question", name: "Does it work with ArtCAM, Aspire or Carveco?", acceptedAnswer: { "@type": "Answer", text: "Yes. Open the STL, or use the native .rlf and 16-bit TIFF exports made at 0.25 mm detail." } },
+              { "@type": "Question", name: "Can I 3D-print a panel?", acceptedAnswer: { "@type": "Answer", text: "Yes: give it a base thickness in the Size step so the mesh is a closed solid, then print the STL." } },
+              { "@type": "Question", name: "Where are my projects saved?", acceptedAnswer: { "@type": "Answer", text: "In this browser. The last 12 text and pattern panels appear under Projects; photo reliefs are not saved yet." } },
+            ],
+          }),
+        }}
+      />
       <h2>Common questions</h2>
       <dl className="faq">
         <dt>Is it free?</dt>
@@ -170,7 +186,7 @@ export function HomePage() {
         <h1 id="home-title">CNC relief design studio</h1>
         <p className="lede">
           Make a carving file from a name, a Quran verse, a photo or a star pattern. Arabic is typeset exactly from real fonts. Files open in ArtCAM,
-          Aspire, Carveco and any CNC software that reads STL.
+          Aspire, Carveco and any CNC software that reads STL. Built for CNC woodworkers, sign makers and furniture workshops.
         </p>
         <Link to="/create" className="btn pri hero-cta">
           New project

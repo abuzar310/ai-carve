@@ -58,6 +58,12 @@ band sizes); the collision is real on the carved piece. Guard shipped: rasterPan
 line's FULL ink (marks included) and returns tightLines + inkRatio; the export verification shows
 'touching vowel marks' in red with the fix choices. A root redesign (mark-aware caps / line pitch)
 would change approved designs' look - owner's call, see UX_REBUILD open items.
+Production-hardening brief status (3 Oct): Phases 1-3 DONE (state verified; 99/99 semantics via
+shared compareNames99/verifyNames99 with Allah as a structural line; every carving export guarded
+at save time, proof deliberately open, no cached verified flag anywhere). Phase 8 audience line and
+Phase 9 structured data (SoftwareApplication + Learn FAQPage) DONE. Still open from that brief:
+Phase 4 dedicated Pattern Builder; Phase 5 IndexedDB project persistence; Phase 6 full Quran
+typography sweep (method below); Phase 7 formal accessibility pass.
 Typography sweep results (3 Oct, evidence for the default decision): under ?typo=mark the
 reported two-line panel and Al-Fatiha go red -> green (Fatiha 24mm -> 19mm via measured line
 pitch, not shrinking); Al-Ikhlas and stock Bismillah are pixel-stable (20mm -> 20mm). Al-Fatiha
