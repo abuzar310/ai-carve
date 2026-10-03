@@ -4,7 +4,7 @@
  * No decorative ticks: a line only shows ✓ when the code just checked it.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { NAMES_99, layoutPanel, type PanelSpec } from "./lib/textPanel";
+import { layoutPanel, verifyNames99, type PanelSpec } from "./lib/textPanel";
 import { proofPng } from "./lib/textRaster";
 
 function Line({ pass, children }: { pass: boolean; children: ReactNode }) {
@@ -18,18 +18,7 @@ function Line({ pass, children }: { pass: boolean; children: ReactNode }) {
 export function NamesVerify({ spec }: { spec: PanelSpec }) {
   const res = useMemo(() => {
     try {
-      const placed = layoutPanel(spec)
-        .items.filter((i) => i.role !== "header")
-        .map((i) => i.text);
-      const inLibrary = placed.filter((t) => NAMES_99.includes(t));
-      return {
-        ok: true as const,
-        count: inLibrary.length,
-        total: placed.length,
-        inOrder: placed.length === NAMES_99.length && placed.every((t, i) => t === NAMES_99[i]),
-        noDup: new Set(placed).size === placed.length,
-        allLibrary: placed.length > 0 && placed.every((t) => NAMES_99.includes(t)),
-      };
+      return { ok: true as const, v: verifyNames99(spec) };
     } catch {
       return { ok: false as const };
     }
@@ -44,12 +33,12 @@ export function NamesVerify({ spec }: { spec: PanelSpec }) {
     <div className="card verify">
       <h3>Checked against the library</h3>
       <ul className="checks">
-        <Line pass={res.count === NAMES_99.length && res.total === NAMES_99.length}>
-          {res.count} of {NAMES_99.length} words placed (الله + the 99 names)
+        <Line pass={res.v.namesFound === 99 && res.v.namesOrdered}>
+          Names verified: {res.v.namesFound} / 99, in the library’s reading order
         </Line>
-        <Line pass={res.inOrder}>Reading order matches the library</Line>
-        <Line pass={res.noDup}>No name repeated</Line>
-        <Line pass={res.allLibrary}>Every word comes from the library — nothing typed, nothing AI-made</Line>
+        <Line pass={res.v.allahFirst}>الله opens the panel — a structural check, counted apart from the 99</Line>
+        <Line pass={res.v.noDup}>No name repeated</Line>
+        <Line pass={res.v.allLibrary}>Every word comes from the library — nothing typed, nothing AI-made</Line>
       </ul>
       <p className="meta">Computed from the exact layout that is carved, each time the design changes.</p>
       <button

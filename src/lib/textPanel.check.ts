@@ -1,4 +1,4 @@
-import {
+import { compareNames99,
   restoreSpec,
   quranMarks,
   sizeProblem,
@@ -268,3 +268,21 @@ console.log(`carve textPanel.check OK (${n} assertions)`);
   ok(badO.frameStyle === DEFAULT_SPEC.frameStyle && badO.corners === DEFAULT_SPEC.corners, "unknown frame / corner values fall back");
 }
 console.log("carve textPanel.check frames + corners OK");
+
+{
+  const lib = [...NAMES_99];
+  ok(compareNames99(lib).ok && compareNames99(lib).namesFound === 99 && compareNames99(lib).allahFirst, "names99: the full library verifies, 99/99 + Allah first");
+  const swapped = [...lib];
+  [swapped[98], swapped[99]] = [swapped[99]!, swapped[98]!];
+  ok(!compareNames99(swapped).namesOrdered && !compareNames99(swapped).ok, "names99: wrong order fails");
+  ok(!compareNames99(lib.slice(0, 99)).ok && compareNames99(lib.slice(0, 99)).namesFound === 98, "names99: a missing name fails with the true count");
+  const dup = [...lib];
+  dup[5] = dup[6]!;
+  ok(!compareNames99(dup).noDup && !compareNames99(dup).ok, "names99: a repeated name fails");
+  const foreign = [...lib];
+  foreign[50] = "سلام";
+  ok(!compareNames99(foreign).allLibrary && !compareNames99(foreign).ok, "names99: a word outside the library fails");
+  const noAllah = [lib[1]!, ...lib.slice(1)];
+  ok(!compareNames99(noAllah).allahFirst && !compareNames99(noAllah).ok, "names99: Allah missing from the front fails");
+}
+console.log("carve textPanel.check names99 comparator OK (6 cases, valid and every invalid class)");

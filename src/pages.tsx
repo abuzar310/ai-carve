@@ -97,7 +97,7 @@ export function LearnPage() {
       <p>
         Arabic here never comes from an image model guessing at letterforms. Every word is verified Unicode from the Quran library or vetted
         lists, rendered through real Arabic fonts into geometry. The 99 Names panel is checked against the library on every change —
-        100 of 100 words, in reading order, nothing repeated — and a black-on-white proof shows the exact lettering before you carve.
+        name by name — all 99 of them, with الله opening the panel — and a black-on-white proof shows the exact lettering before you carve.
       </p>
       <p>
         <Link className="btn pri" to={WORKFLOW_PATH.names99}>Open the 99 Names panel</Link>
@@ -188,7 +188,7 @@ export function HomePage() {
         <div>
           <h2>Exact Arabic. Not AI-generated glyphs.</h2>
           <p className="meta">
-            Verified Unicode, real Arabic fonts, and a 99 Names panel checked 100 of 100 against the library on every change — with a
+            Verified Unicode, real Arabic fonts, and a 99 Names panel with every one of the 99 Names checked against the library on every change — with a
             proof of the exact lettering before you carve. <Link to={WORKFLOW_PATH.names99}>Open 99 Names</Link>
           </p>
         </div>

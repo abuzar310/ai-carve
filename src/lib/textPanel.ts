@@ -849,3 +849,31 @@ export function missingText(spec: PanelSpec): boolean {
   if (spec.template === "names99" || spec.template === "pattern") return false;
   return !spec.lines.some((l) => l.trim());
 }
+
+/** 99 Names verification, shared by the UI card and every export guard.
+ *  NAMES_99 holds 100 words: الله first (a structural item), then the 99 Names. */
+export type Names99Verdict = {
+  allahFirst: boolean;
+  namesFound: number;
+  namesOrdered: boolean;
+  noDup: boolean;
+  allLibrary: boolean;
+  total: number;
+  ok: boolean;
+};
+
+export function compareNames99(placed: readonly string[]): Names99Verdict {
+  const allahFirst = placed[0] === NAMES_99[0];
+  const names = placed.slice(1);
+  const lib = NAMES_99.slice(1);
+  const namesFound = names.filter((t) => lib.includes(t)).length;
+  const namesOrdered = names.length === lib.length && names.every((t, i) => t === lib[i]);
+  const noDup = new Set(placed).size === placed.length;
+  const allLibrary = placed.length > 0 && placed.every((t) => NAMES_99.includes(t));
+  return { allahFirst, namesFound, namesOrdered, noDup, allLibrary, total: placed.length, ok: allahFirst && namesOrdered && noDup && allLibrary && placed.length === NAMES_99.length };
+}
+
+/** The verdict for the exact layout that will be carved, recomputed from the spec every time. */
+export function verifyNames99(spec: PanelSpec): Names99Verdict {
+  return compareNames99(layoutPanel(spec).items.filter((i) => i.role !== "header").map((i) => i.text));
+}
