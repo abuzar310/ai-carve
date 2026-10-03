@@ -819,3 +819,6 @@ details.exp-more .btn { margin-top: 8px }
 .recent-item { display: grid }
 .recent-acts { display: flex; gap: 14px; padding: 6px 2px 0 }
 .recent-acts .linkish { min-height: 44px }
+
+/* camera button only where there is a camera (touch devices) */
+@media (hover: hover) and (pointer: fine) { .cam-only { display: none } }

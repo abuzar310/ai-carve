@@ -201,6 +201,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   const [panelStep, setPanelStep] = useState<"image" | "size" | "relief" | "export">("image");
   const [textQa, setTextQa] = useState<{ inkRatio: number; tightLines: number } | null>(null);
   const hadPicRef = useRef(false);
+  const camRef = useRef<HTMLInputElement>(null);
+  const onFileRef = useRef<(f: File) => Promise<void> | void>(() => {});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [legDia, setLegDia] = useState(50);
   const [turned, setTurned] = useState(true);
@@ -802,6 +804,24 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     if (!workflow || MODE_OF[workflow] === mode) return;
     navigate(mode === "text" ? WORKFLOW_PATH.text : WORKFLOW_PATH.image, { replace: true });
   }, [mode, workflow]);
+  // paste a copied image or screenshot anywhere in the photo workspace (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const well = wellRef.current;
+      if (!well || well.offsetParent === null) return; // workspace hidden (Home, text mode layout differs)
+      const items = e.clipboardData?.files?.length ? Array.from(e.clipboardData.files) : Array.from(e.clipboardData?.items ?? []).map((i) => (i.kind === "file" ? i.getAsFile() : null));
+      const f = items.find((x): x is File => !!x && x.type.startsWith("image/"));
+      if (f) {
+        e.preventDefault();
+        void onFileRef.current(f);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   // a newly added picture moves the side menu to Size; removing it returns to Image (steps stay jumpable)
   useEffect(() => {
     if (pic && !hadPicRef.current && wfRef.current !== "trace") setPanelStep("size");
@@ -999,7 +1019,24 @@ export default function App({ workflow, navKey, example, recent }: Props) {
           e.target.value = "";
         }}
       />
+      <input
+        ref={camRef}
+        hidden
+        type="file"
+        name="camera_image"
+        accept="image/*"
+        capture="environment"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void onFile(f);
+          e.target.value = "";
+        }}
+      />
 
+      {(() => {
+        onFileRef.current = onFile;
+        return null;
+      })()}
       <header className="bar">
         <Link className="ws-back" to="/create" aria-label="Back to Create">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1161,11 +1198,36 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                       <button type="button" className="btn pri" onClick={pickFile} disabled={!!busy}>
                         Upload image
                       </button>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        disabled={!!busy}
+                        onClick={async () => {
+                          try {
+                            for (const item of await navigator.clipboard.read()) {
+                              const type = item.types.find((t) => t.startsWith("image/"));
+                              if (type) {
+                                const blob = await item.getType(type);
+                                void onFile(new File([blob], "pasted." + (type.split("/")[1] ?? "png"), { type }));
+                                return;
+                              }
+                            }
+                            setNote("Nothing to paste: copy an image first, or press Ctrl+V / ⌘V.");
+                          } catch {
+                            setNote("Press Ctrl+V (⌘V on Mac) to paste a copied image or screenshot.");
+                          }
+                        }}
+                      >
+                        Paste image
+                      </button>
+                      <button type="button" className="btn ghost cam-only" disabled={!!busy} onClick={() => camRef.current?.click()}>
+                        Take a photo
+                      </button>
                       <button type="button" className="btn on-dark" onClick={() => switchMode("text")} disabled={!!busy}>
                         Make a text panel
                       </button>
                     </div>
-                    <p className="hint">Photos: JPG, PNG, WebP, or BMP — drag and drop works too. Text panels: names, Quran verses, the 99 Names.</p>
+                    <p className="hint">Photos: JPG, PNG, WebP, or BMP — drag and drop or paste (Ctrl+V) works too. Text panels: names, Quran verses, the 99 Names.</p>
                   </>
                 )}
               </div>

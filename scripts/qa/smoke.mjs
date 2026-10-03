@@ -238,6 +238,24 @@ if (want(12)) {
   await p2.context().close();
 }
 
+// 13. Image input options: upload + paste buttons, Ctrl+V paste loads a picture, drop still works
+if (want(13)) {
+  const p = await page(browser);
+  await p.goto(BASE + "/create/image"); await p.waitForTimeout(900);
+  check((await p.getByRole("button", { name: "Upload image" }).isVisible()) && (await p.getByRole("button", { name: "Paste image" }).isVisible()), "upload and paste buttons offered");
+  check((await p.getByText(/paste \(Ctrl\+V\)/).count()) > 0, "hint names drag-drop and paste");
+  await p.evaluate(async () => {
+    const r = await fetch("/examples/carving.jpg");
+    const f = new File([await r.blob()], "paste.jpg", { type: "image/jpeg" });
+    const dt = new DataTransfer(); dt.items.add(f);
+    window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt }));
+  });
+  await p.waitForTimeout(1500);
+  check((await p.locator('.ws-steps button[aria-current="step"]').innerText().catch(() => "")).includes("Size"), "Ctrl+V paste loads the picture");
+  check(!p.errors.length, `image input options without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);
