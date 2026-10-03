@@ -277,6 +277,30 @@ if (want(14)) {
   await ctx.close();
 }
 
+// 15. REGRESSION (bug hunt P1): a text export can never ship a stale build.
+// Old behavior: change a size after building and .rlf/TIFF/vectors silently exported the
+// previous relief while the verification line stayed green. Now the line goes red and the
+// save is refused with an actionable message.
+if (want(15)) {
+  const ctx = await browser.newContext({ acceptDownloads: true });
+  const p = await ctx.newPage();
+  p.errors = []; p.on("pageerror", (e) => p.errors.push(e.message));
+  await p.goto(BASE + "/create/text?example=name");
+  let built = false;
+  for (let i = 0; i < 30; i++) { await p.waitForTimeout(1000); if (await p.getByText(/relief is ready/i).count()) { built = true; break; } }
+  check(built, "stale-export: name example builds");
+  const w = p.locator('input[name="panel-width"]').first();
+  await w.fill("777"); await w.dispatchEvent("change"); await p.waitForTimeout(800);
+  check((await p.locator(".exp-checks li.fail", { hasText: /press Rebuild/ }).count()) === 1, "stale-export: drift turns the verification line red");
+  let dl = 0; p.on("download", () => dl++);
+  await p.getByRole("button", { name: /ArtCAM relief/ }).click();
+  await p.waitForTimeout(4000);
+  check(dl === 0, "stale-export: .rlf refused while stale");
+  check((await p.getByText(/Settings changed since this relief was built/).count()) > 0, "stale-export: actionable message shown");
+  check(!p.errors.length, `stale-export guard without errors ${p.errors.join(" | ")}`);
+  await ctx.close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);

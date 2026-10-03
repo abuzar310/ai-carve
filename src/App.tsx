@@ -202,6 +202,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   const [textQa, setTextQa] = useState<{ inkRatio: number; tightLines: number } | null>(null);
   const hadPicRef = useRef(false);
   const camRef = useRef<HTMLInputElement>(null);
+  /** Synchronous mirror of `busy` so two input events in the same frame can never both start a pipeline. */
+  const busyRef = useRef("");
   const onFileRef = useRef<(f: File) => Promise<void> | void>(() => {});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [legDia, setLegDia] = useState(50);
@@ -446,6 +448,12 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   }
 
   async function onFile(file: File) {
+    if (busy || busyRef.current) {
+      setNote("Hold on — still building the last one. Add the new picture when it finishes.");
+      return;
+    }
+    busyRef.current = "Reading the picture"; // claimed synchronously: a second paste/drop this frame is turned away
+    setBusy("Reading the picture");
     setErr("");
     setNote("");
     const url = URL.createObjectURL(file);
@@ -558,11 +566,20 @@ export default function App({ workflow, navKey, example, recent }: Props) {
 
   /** Phase-3 export security: every carving artifact re-verifies the 99 Names layout at save time.
    *  The proof image is deliberately NOT guarded: it is the tool for seeing what is wrong. */
+  /** Text settings changed since the build: the relief on screen no longer matches the inputs. */
+  const textDrift = mode === "text" && !!raw?.exact && !!builtSpec && JSON.stringify(builtSpec) !== JSON.stringify(textSpec);
+
   function names99ExportBlock(): string | null {
     const bs = builtSpec ?? textSpec;
     if (raw?.exact && bs.template === "names99" && !verifyNames99(bs).ok)
       return "The 99 Names did not verify against the library, so nothing was exported. Open the checklist above the exports, fix the design, and rebuild.";
     return null;
+  }
+
+  /** The one gate every carving export passes: never a stale build, never unverified Names. */
+  function exportBlock(): string | null {
+    if (meshLag || textDrift) return "Settings changed since this relief was built — press Rebuild so the export matches the preview, then save again.";
+    return names99ExportBlock();
   }
 
   function requestStl() {
@@ -572,9 +589,12 @@ export default function App({ workflow, navKey, example, recent }: Props) {
       setErr(verdict.errors[0] || "This relief did not pass the solid check, so the STL was not saved.");
       return;
     }
-    if (names99ExportBlock()) {
-      setErr(names99ExportBlock()!);
-      return;
+    {
+      const b = exportBlock();
+      if (b) {
+        setErr(b);
+        return;
+      }
     }
     const tris = triangleEstimate(raw.cols, raw.rows, isSurfaceOnly(board.baseMm));
     const mb = stlBytesEstimate(tris) / 1e6;
@@ -587,7 +607,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
 
   async function saveArtcam() {
     {
-      const b = names99ExportBlock();
+      const b = exportBlock();
       if (b) {
         setErr(b);
         return;
@@ -824,6 +844,10 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     if (!workflow || MODE_OF[workflow] === mode) return;
     navigate(mode === "text" ? WORKFLOW_PATH.text : WORKFLOW_PATH.image, { replace: true });
   }, [mode, workflow]);
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
   // paste a copied image or screenshot anywhere in the photo workspace (Ctrl+V / Cmd+V)
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -865,6 +889,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   }, []);
 
   async function buildText() {
+    if (busy || busyRef.current) return;
+    busyRef.current = "Typesetting";
     setErr("");
     setNote("");
     setBusy("Typesetting");
@@ -901,7 +927,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
 
   async function saveTextRelief(kind: "rlf" | "tif") {
     {
-      const b = names99ExportBlock();
+      const b = exportBlock();
       if (b) {
         setErr(b);
         return;
@@ -935,7 +961,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
 
   async function saveOutline() {
     {
-      const b = names99ExportBlock();
+      const b = exportBlock();
       if (b) {
         setErr(b);
         return;
@@ -957,7 +983,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   /** Letter outlines, pattern centre lines and the cut outline as vectors, for V-carve toolpaths. */
   async function saveVectors(fmt: "dxf" | "svg") {
     {
-      const b = names99ExportBlock();
+      const b = exportBlock();
       if (b) {
         setErr(b);
         return;
@@ -1772,9 +1798,9 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                     <i aria-hidden="true">{verdict?.ok ? "✓" : "✗"}</i>{" "}
                     {verdict?.ok ? "Mesh checked: a valid solid for CNC and printing" : verdict?.errors[0] || "The mesh did not pass the solid check"}
                   </li>
-                  <li className={!meshLag ? "pass" : "fail"}>
-                    <i aria-hidden="true">{!meshLag ? "✓" : "✗"}</i>{" "}
-                    {!meshLag ? "Preview matches the settings — exports write exactly this mesh" : "Settings changed — press Regenerate so the export matches"}
+                  <li className={!meshLag && !textDrift ? "pass" : "fail"}>
+                    <i aria-hidden="true">{!meshLag && !textDrift ? "✓" : "✗"}</i>{" "}
+                    {!meshLag && !textDrift ? "Preview matches the settings — exports write exactly this mesh" : "Settings changed — press Rebuild so the export matches"}
                   </li>
                   <li className={verdict && Math.abs(verdict.size[0] - board.widthMm) <= 0.05 && Math.abs(verdict.size[1] - board.heightMm) <= 0.05 && Math.abs(verdict.size[2] - thickMm) <= 0.1 ? "pass" : "fail"}>
                     <i aria-hidden="true">{verdict && Math.abs(verdict.size[0] - board.widthMm) <= 0.05 && Math.abs(verdict.size[1] - board.heightMm) <= 0.05 && Math.abs(verdict.size[2] - thickMm) <= 0.1 ? "✓" : "✗"}</i>{" "}
