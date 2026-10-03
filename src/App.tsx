@@ -205,6 +205,21 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   /** Synchronous mirror of `busy` so two input events in the same frame can never both start a pipeline. */
   const busyRef = useRef("");
   const onFileRef = useRef<(f: File) => Promise<void> | void>(() => {});
+  /**
+   * Every build runs as a numbered job. Leaving the workflow, clearing the picture or starting a newer
+   * build moves the number on, and a job that finishes after that drops its result. Without this a photo
+   * still building when the person opened Text landed in the Text workspace as "ready", every check green
+   * (bug hunt pass 2, P1), and the reverse for a text build finishing in Image.
+   */
+  const jobRef = useRef(0);
+  const newJob = () => ++jobRef.current;
+  const isCurrent = (job: number) => job === jobRef.current;
+  /** Drop every running build: its result, its progress line and its claim on the inputs. */
+  function cancelJobs() {
+    jobRef.current++;
+    busyRef.current = ""; // a claim made this same frame never reaches state, so clear the mirror too
+    setBusy("");
+  }
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [legDia, setLegDia] = useState(50);
   const [turned, setTurned] = useState(true);
@@ -240,20 +255,26 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     return () => window.clearTimeout(t);
   }, [note]);
 
-  async function fromImage(src: string) {
-    setBusy("Preparing image");
+  async function fromImage(src: string, job: number) {
+    const status = (s: string) => {
+      if (isCurrent(job)) setBusy(s);
+    };
+    status("Preparing image");
     const img = await loadImage(src);
+    if (!isCurrent(job)) return;
     setFileMeta((m) => ({
       name: m?.name || "Picture",
       size: m?.size || 0,
       w: img.naturalWidth || img.width,
       h: img.naturalHeight || img.height,
     }));
-    setBusy("Generating depth");
+    status("Generating depth");
     await tick();
+    if (!isCurrent(job)) return;
     const srcMax = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
     const cols = fieldCols(quality, srcMax);
     const next = await rasterFromImage(img, cols, invert);
+    if (!isCurrent(job)) return;
     const iw = img.naturalWidth || img.width;
     const ih = img.naturalHeight || img.height;
     let kind = piece;
@@ -284,18 +305,19 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     const needDepth = !(kind === "leg" && turned) && workflow !== "depth";
     let dep: Float32Array | null | undefined;
     if (needDepth) {
-      dep = await estimateDepth(img, iw, ih, next.cols, next.rows, (s) => setBusy(s));
+      dep = await estimateDepth(img, iw, ih, next.cols, next.rows, status, () => isCurrent(job));
+      if (!isCurrent(job)) return;
       if (dep && invert) dep = dep.map((v) => 1 - v);
       if (!dep) setNote((n) => (n ? n + " " : "") + "Depth model unavailable: relief uses picture brightness only.");
     }
     if (workflow === "depth") setNote("Height map used directly: white is high, black is deep.");
-    setBusy("Building 3D relief");
+    status("Building 3D relief");
     setRaw({ height: next.height, alpha: next.alpha, depth: dep, depthKind: dep ? activeDepthModel ?? "general" : undefined, cols: next.cols, rows: next.rows, invert });
     setCutPass((n) => n + 1);
     setView((v) => ({ kind: "persp", n: v.n + 1 }));
-    setBusy("Preparing preview");
+    status("Preparing preview");
     await tick();
-    setBusy("");
+    if (isCurrent(job)) setBusy("");
   }
 
   const [fieldOpts, setFieldOpts] = useState({ contrast, smooth, normalize, clean, detail });
@@ -339,12 +361,18 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     let live = true;
     const img = lastImg.current;
     const r = raw;
+    const job = newJob();
+    const status = (s: string) => {
+      if (isCurrent(job)) setBusy(s);
+    };
     void (async () => {
-      setBusy("Generating depth");
-      let dep = await estimateDepth(img, img.naturalWidth || img.width, img.naturalHeight || img.height, r.cols, r.rows, (s) => setBusy(s));
+      status("Generating depth");
+      let dep = await estimateDepth(img, img.naturalWidth || img.width, img.naturalHeight || img.height, r.cols, r.rows, status, () => live && isCurrent(job));
+      if (!isCurrent(job)) return; // a newer build owns the progress line now
+      if (!live) return void setBusy(""); // this picture's field was replaced: nothing to attach the depth to
       if (dep && r.invert) dep = dep.map((v) => 1 - v);
       if (!dep) setNote("Depth model unavailable: relief uses picture brightness only.");
-      if (live) setRaw((cur) => (cur === r ? { ...r, depth: dep ?? null, depthKind: dep ? activeDepthModel ?? "general" : undefined } : cur));
+      setRaw((cur) => (cur === r ? { ...r, depth: dep ?? null, depthKind: dep ? activeDepthModel ?? "general" : undefined } : cur));
       setBusy("");
     })();
     return () => {
@@ -410,6 +438,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     fieldOpts.detail !== detail;
 
   async function generate() {
+    const job = newJob();
     setErr("");
     setNote("");
     setBusy("Generating image");
@@ -434,13 +463,15 @@ export default function App({ workflow, navKey, example, recent }: Props) {
           last = e instanceof Error ? e.message : last;
         }
       }
+      if (!isCurrent(job)) return; // the person left or started something else while the image was made
       if (!blob) throw new Error(last);
       const url = URL.createObjectURL(blob);
       if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
       setPic(url);
       setFileMeta({ name: "Generated image", size: blob.size, w: 0, h: 0 });
-      await fromImage(url);
+      await fromImage(url, job);
     } catch (e) {
+      if (!isCurrent(job)) return;
       setRaw(null);
       setErr(sayErr(e));
       setBusy("");
@@ -453,6 +484,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
       return;
     }
     busyRef.current = "Reading the picture"; // claimed synchronously: a second paste/drop this frame is turned away
+    const job = newJob();
     setBusy("Reading the picture");
     setErr("");
     setNote("");
@@ -461,8 +493,9 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     setPic(url);
     setFileMeta({ name: file.name, size: file.size, w: 0, h: 0 });
     try {
-      await fromImage(url);
+      await fromImage(url, job);
     } catch (e) {
+      if (!isCurrent(job)) return;
       setRaw(null);
       setErr(sayErr(e));
       setBusy("");
@@ -470,6 +503,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   }
 
   function clearPic() {
+    cancelJobs();
     if (pic.startsWith("blob:")) URL.revokeObjectURL(pic);
     sizedFor.current = "";
     setImgSize(null);
@@ -485,8 +519,11 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   }
 
   useEffect(() => {
-    if (!pic) return;
-    fromImage(pic).catch((e) => {
+    if (!pic || mode !== "photo") return;
+    // a new job per change: toggling Invert or Quality quickly keeps only the last setting's result
+    const job = newJob();
+    fromImage(pic, job).catch((e) => {
+      if (!isCurrent(job)) return;
       setRaw(null);
       setErr(sayErr(e));
       setBusy("");
@@ -511,7 +548,17 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   const thickMm = board.depthMm + board.baseMm;
 
   async function saveStl() {
+    const job = jobRef.current; // an export outliving a newer build must not clear that build's progress
     if (!mesh || !refined || !raw) return;
+    {
+      // gated here too, not only in requestStl: the large-file warning's "Download anyway" comes straight here
+      const b = exportBlock();
+      if (b) {
+        setWarn(null);
+        setErr(b);
+        return;
+      }
+    }
     setErr("");
     setNote("");
     setWarn(null);
@@ -560,7 +607,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
       setErr(sayErr(e));
     } finally {
       out = null;
-      setBusy("");
+      if (isCurrent(job)) setBusy("");
     }
   }
 
@@ -576,8 +623,19 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     return null;
   }
 
-  /** The one gate every carving export passes: never a stale build, never unverified Names. */
+  /**
+   * A relief made by the other workflow (a photo in Text, a text panel in Image). Builds run as jobs, so
+   * this should never happen; if a future path ever lets one through, the workspace drops it and no
+   * export can ship it.
+   */
+  const foreign = !!raw && (mode === "text") !== !!raw.exact;
+  useEffect(() => {
+    if (foreign) setRaw(null);
+  }, [foreign]);
+
+  /** The one gate every carving export passes: never another workflow's relief, never a stale build, never unverified Names. */
   function exportBlock(): string | null {
+    if (foreign) return "This relief was made in the other workspace — build it again here, then save.";
     if (meshLag || textDrift) return "Settings changed since this relief was built — press Rebuild so the export matches the preview, then save again.";
     return names99ExportBlock();
   }
@@ -606,6 +664,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   }
 
   async function saveArtcam() {
+    const job = jobRef.current; // an export outliving a newer build must not clear that build's progress
     {
       const b = exportBlock();
       if (b) {
@@ -627,7 +686,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     } catch (e) {
       setErr(sayErr(e));
     } finally {
-      setBusy("");
+      if (isCurrent(job)) setBusy("");
     }
   }
 
@@ -684,6 +743,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   const photoBoard = useRef<typeof board | null>(null);
   function switchMode(m: "photo" | "text") {
     if (m === mode) return;
+    cancelJobs(); // a build for the workspace being left must not land in the one being opened
     setErr("");
     if (m === "text") photoBoard.current = board;
     else if (photoBoard.current) setBoard(photoBoard.current);
@@ -748,13 +808,15 @@ export default function App({ workflow, navKey, example, recent }: Props) {
 
   /** Start tiles: load a real example so a first visit shows a finished carving in seconds. */
   async function tryPicture(path: string, name: string, thenTrace = false) {
+    const job = newJob();
     try {
       const blob = await (await fetch(path)).blob();
+      if (!isCurrent(job)) return; // the person moved on while the example downloaded: don't pull them back
       if (mode !== "photo") switchMode("photo");
       await onFile(new File([blob], name, { type: blob.type || "image/png" }));
       if (thenTrace) setTraceOpen((n) => n + 1);
     } catch {
-      setErr("The example could not be loaded. Check your connection and try again.");
+      if (isCurrent(job)) setErr("The example could not be loaded. Check your connection and try again.");
     }
   }
   function tryDesign(id: string) {
@@ -792,6 +854,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     applied.current = sig;
     const path = WORKFLOW_PATH[workflow];
     const want = MODE_OF[workflow];
+    // switching workflow cancels whatever was building, so only a build in this same workflow holds an entry back
+    const occupied = !!busy && want === mode;
     if (want !== mode) {
       pendingMode.current = want;
       switchMode(want);
@@ -799,7 +863,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     const ex = STARTS.find((t) => t.id === (example as ExampleId | null));
     if (ex) {
       navigate(path, { replace: true }); // a refresh must not run the example again
-      if (busy) return;
+      if (occupied) return;
       if (ex.design) tryDesign(ex.design);
       else void tryPicture(ex.file!, ex.file!.split("/").pop()!, ex.id === "trace");
       return;
@@ -812,7 +876,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
       } catch {
         /* private mode */
       }
-      if (hit && !busy) {
+      if (hit && !occupied) {
         setTextSpec(hit);
         setBuildSoon(true);
       }
@@ -891,17 +955,21 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   async function buildText() {
     if (busy || busyRef.current) return;
     busyRef.current = "Typesetting";
+    const job = newJob();
     setErr("");
     setNote("");
     setBusy("Typesetting");
     try {
       await tick();
+      if (!isCurrent(job)) return;
       if (missingText(textSpec)) throw new Error("Type some text first.");
       const bad = sizeProblem(textSpec);
       if (bad) throw new Error(bad);
       const f = await textField(mobile ? 1024 : QUALITY.ultra.field);
+      if (!isCurrent(job)) return; // the person left the text workspace while it typeset
       setBusy("Building 3D relief");
       await tick();
+      if (!isCurrent(job)) return;
       setBoard({ widthMm: textSpec.widthMm, heightMm: textSpec.heightMm, depthMm: f.depthMm, baseMm: 0 });
       setRaw({ height: f.h, alpha: null, depth: null, cols: f.cols, rows: f.rows, invert: false, exact: true });
       setBuiltSpec(textSpec);
@@ -919,13 +987,14 @@ export default function App({ workflow, navKey, example, recent }: Props) {
       setBusy("Preparing preview");
       await tick();
     } catch (e) {
-      setErr(sayErr(e));
+      if (isCurrent(job)) setErr(sayErr(e));
     } finally {
-      setBusy("");
+      if (isCurrent(job)) setBusy("");
     }
   }
 
   async function saveTextRelief(kind: "rlf" | "tif") {
+    const job = jobRef.current; // an export outliving a newer build must not clear that build's progress
     {
       const b = exportBlock();
       if (b) {
@@ -955,7 +1024,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     } catch (e) {
       setErr(sayErr(e));
     } finally {
-      setBusy("");
+      if (isCurrent(job)) setBusy("");
     }
   }
 
@@ -982,6 +1051,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
 
   /** Letter outlines, pattern centre lines and the cut outline as vectors, for V-carve toolpaths. */
   async function saveVectors(fmt: "dxf" | "svg") {
+    const job = jobRef.current; // an export outliving a newer build must not clear that build's progress
     {
       const b = exportBlock();
       if (b) {
@@ -1020,11 +1090,12 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     } catch (e) {
       setErr(sayErr(e));
     } finally {
-      setBusy("");
+      if (isCurrent(job)) setBusy("");
     }
   }
 
   async function saveProof() {
+    const job = jobRef.current; // an export outliving a newer build must not clear that build's progress
     setErr("");
     try {
       setBusy("Typesetting");
@@ -1035,18 +1106,20 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     } catch (e) {
       setErr(sayErr(e));
     } finally {
-      setBusy("");
+      if (isCurrent(job)) setBusy("");
     }
   }
 
   async function regenerate() {
     if (mode === "text") return buildText();
     if (!pic) return;
+    const job = newJob();
     setErr("");
     setNote("");
     try {
-      await fromImage(pic);
+      await fromImage(pic, job);
     } catch (e) {
+      if (!isCurrent(job)) return;
       setErr(sayErr(e));
       setBusy("");
     }

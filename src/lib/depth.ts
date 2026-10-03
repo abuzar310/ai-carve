@@ -68,13 +68,35 @@ async function loadPipe(onStatus?: (s: string) => void): Promise<DepthPipe> {
   return pipe;
 }
 
-export async function estimateDepth(
+/** Depth runs one at a time: a run nobody wants any more never competes with the live one for the CPU. */
+let lane: Promise<unknown> = Promise.resolve();
+
+/**
+ * `wanted` is asked before every model run; once it says no (the person left, or a newer build started)
+ * the remaining tiles are skipped and the result is null, which the caller discards anyway.
+ */
+export function estimateDepth(
   src: CanvasImageSource,
   srcW: number,
   srcH: number,
   cols: number,
   rows: number,
   onStatus?: (s: string) => void,
+  wanted: () => boolean = () => true,
+): Promise<Float32Array | null> {
+  const run = lane.then(() => (wanted() ? runDepth(src, srcW, srcH, cols, rows, onStatus, wanted) : null));
+  lane = run.catch(() => null);
+  return run;
+}
+
+async function runDepth(
+  src: CanvasImageSource,
+  srcW: number,
+  srcH: number,
+  cols: number,
+  rows: number,
+  onStatus: ((s: string) => void) | undefined,
+  wanted: () => boolean,
 ): Promise<Float32Array | null> {
   try {
     if (!pipePromise) {
@@ -93,6 +115,7 @@ export async function estimateDepth(
     const sy = srcH / rows;
     const parts: Float32Array[] = [];
     for (let k = 0; k < tiles.length; k++) {
+      if (!wanted()) return null;
       const t = tiles[k]!;
       onStatus?.(tiles.length > 1 ? `Estimating depth ${k + 1}/${tiles.length}` : "Estimating depth");
       const tw = t.w * sx;

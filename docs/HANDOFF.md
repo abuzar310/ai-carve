@@ -67,6 +67,24 @@ browser sections + 24 unit files, all green on the shipping build. NEXT SESSION,
 invalid/extreme-input grid, perf pass; (2) Phase 4 dedicated Pattern Builder; (3) IndexedDB
 project persistence; (4) 13-design Quran typography sweep (method below) then the mark-aware
 default decision; (5) Four Quls box-overlap layout fix; (6) formal accessibility pass.
+Bug-hunt pass 2, chunk 1 (3 Oct, chaos matrix): FIXED P1 cross-workflow landing - a photo still
+building when the person opened Text landed there as "ready", every check green; a text build
+still running when they opened Image landed there with no picture. Builds are now numbered jobs
+(jobRef/newJob/isCurrent/cancelJobs in App.tsx): switching workflow, clearing the picture or a newer
+build moves the number on and a finished stale job drops its result; cancel also releases the
+busyRef claim (a click+navigate in one frame left it held). Depth runs are serialized in depth.ts
+and skip tiles once unwanted. Backstop: `foreign` (relief kind != workspace) is dropped and
+refused by exportBlock(); saveStl is gated itself (the large-file "Download anyway" bypassed
+requestStl). An example opened from another workflow is no longer dropped by the build it cancels.
+Smoke 17 locks both directions (fails on the old code, passes now). Smoke 16 flake (3 in 5 on the
+old code) root-caused: the first model load blocks the main thread ~17 s in the sandbox, so the
+note's 6 s auto-hide fired before the query; 16 now reads the note when it renders.
+CHECKED CLEAN: refresh mid-build (photo/text), Build x10 in one frame, example then back then
+another example, Invert toggled mid-build (result hashed against a clean build).
+PERF LEDGER (for the perf pass): first photo build freezes the page ~17 s (progress text stuck on
+"Downloading relief model 100%"): inference runs on the main thread - try ORT wasm proxy (worker).
+Minor: Image "Reset settings" sets quality High, ignoring the Settings default (newProject uses
+readQuality()). Suite: 17 browser sections + 24 unit files.
 START NEXT CHAT with a FRESH repo-only token - the ones used so far are burned and must be
 revoked (GitHub all-repos PAT + a Vercel vcp token were pasted in chat).
 Production-hardening brief status (3 Oct): Phases 1-3 DONE (state verified; 99/99 semantics via

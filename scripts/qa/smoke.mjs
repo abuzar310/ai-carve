@@ -307,18 +307,59 @@ if (want(16)) {
   const p = await page(browser);
   p.errors = []; p.on("pageerror", (e) => p.errors.push(e.message));
   await p.goto(BASE + "/create/image"); await p.waitForTimeout(900);
-  await p.evaluate(async () => {
+  // the note is read as soon as it renders: the first build's model load can block the page long enough
+  // for the note's 6 s auto-hide to fire before a later query runs (that made this check flaky, 3 in 5)
+  const sawHold = await p.evaluate(async () => {
     const mk = async (u, n) => { const r = await fetch(u); const f = new File([await r.blob()], n, { type: "image/jpeg" }); const dt = new DataTransfer(); dt.items.add(f); return new ClipboardEvent("paste", { clipboardData: dt }); };
     const a = await mk("/examples/carving.jpg", "first.jpg");
     const b = await mk("/examples/ex-name.webp", "second.webp");
     window.dispatchEvent(a); window.dispatchEvent(b); // same frame, zero gap
+    await new Promise((r) => setTimeout(r, 60));
+    return [...document.querySelectorAll(".banner")].some((x) => /Hold on/.test(x.textContent));
   });
   await p.waitForTimeout(1500);
   const meta = (await p.locator("aside.source").innerText().catch(() => "")).replace(/\s+/g, " ");
   check(meta.includes("first.jpg") && !meta.includes("second.webp"), `same-frame double paste: first wins, second turned away (${meta.slice(0, 40)})`);
-  check((await p.getByText(/Hold on/).count()) > 0, "the second paste gets the hold-on note");
+  check(sawHold, "the second paste gets the hold-on note");
   check(!p.errors.length, `input exclusivity without errors ${p.errors.join(" | ")}`);
   await p.context().close();
+}
+
+// 17. REGRESSION (bug hunt pass 2, P1): a build still running when the person switches workflow
+// must not land in the workspace they opened. Old behaviour: a photo mid-depth shown in Text as
+// "ready", every check green; a name plaque mid-typeset shown in Image with no picture loaded.
+// Also proves the cancel releases the input lock (a click + navigate in one frame once left it held).
+if (want(17)) {
+  const go = (p, to) => p.evaluate((t) => { history.pushState(null, "", t); dispatchEvent(new PopStateEvent("popstate")); }, to);
+  const meta = (p) => p.locator(".result-bar .meta").innerText().catch(() => "");
+  const p = await page(browser);
+  await p.goto(BASE + "/create/image"); await p.waitForTimeout(900);
+  await p.setInputFiles('input[name="source_image"]', "public/examples/carving.jpg");
+  await p.waitForTimeout(250);
+  const midPhoto = (await p.locator(".veil").count()) > 0;
+  await go(p, "/create/text?example=name"); // leave mid-depth, and build something else straight away
+  let named = false;
+  for (let i = 0; i < 25; i++) { await p.waitForTimeout(1000); if (/300 × 120/.test(await meta(p))) { named = true; break; } }
+  await p.waitForTimeout(8000); // long enough for the abandoned depth run to have finished
+  const m = await meta(p);
+  check(midPhoto && named && /300 × 120/.test(m) && !/100 × 100/.test(m), `photo left mid-build never lands in Text (${m.slice(0, 40)})`);
+  check(!p.errors.length, `workflow switch mid-photo without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+
+  const q = await page(browser);
+  await q.goto(BASE + "/create/text?example=name");
+  for (let i = 0; i < 25; i++) { await q.waitForTimeout(1000); if (await q.getByText(/relief is ready/i).count()) break; }
+  await q.evaluate(() => { // Rebuild and leave in the same task: the build is certainly still running
+    const b = [...document.querySelectorAll("button")].filter((x) => /Build text panel|Rebuild text panel/.test(x.textContent)).pop();
+    b.click(); history.pushState(null, "", "/create/image"); dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await q.waitForTimeout(4000);
+  check((await q.getByText(/relief is ready/i).count()) === 0, "text left mid-build never lands in Image");
+  await q.setInputFiles('input[name="source_image"]', "public/examples/carving.jpg");
+  await q.waitForTimeout(1200);
+  check((await q.getByText(/Hold on/).count()) === 0 && (await q.locator("aside.source").innerText().catch(() => "")).includes("carving.jpg"), "the cancelled build released the input lock: a new picture is accepted");
+  check(!q.errors.length, `workflow switch mid-text without errors ${q.errors.join(" | ")}`);
+  await q.context().close();
 }
 
 await browser.close();
