@@ -58,6 +58,13 @@ band sizes); the collision is real on the carved piece. Guard shipped: rasterPan
 line's FULL ink (marks included) and returns tightLines + inkRatio; the export verification shows
 'touching vowel marks' in red with the fix choices. A root redesign (mark-aware caps / line pitch)
 would change approved designs' look - owner's call, see UX_REBUILD open items.
+Typography sweep results (3 Oct, evidence for the default decision): under ?typo=mark the
+reported two-line panel and Al-Fatiha go red -> green (Fatiha 24mm -> 19mm via measured line
+pitch, not shrinking); Al-Ikhlas and stock Bismillah are pixel-stable (20mm -> 20mm). Al-Fatiha
+is the SECOND shipped design that fails clearance today. Four Quls fails in both modes: its
+line boxes overlap in layoutPanel (sections) - fix the boxes, not the type. Before flipping the
+default: run this sweep over all 13 Quran designs (the node enumerator can't hydrate them;
+build each in the browser, compare clearance class + 'Letters about N mm').
 Typography follow-ups: mark-aware line fitting is implemented behind ?typo=mark (full ink incl.
 tashkeel must fit each line's band; wrapped blocks scale as one). Proven on the reported two-line
 panel (clearance red -> green); owner approval pending before it becomes the default (see

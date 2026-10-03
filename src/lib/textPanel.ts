@@ -532,29 +532,25 @@ export function fitText(
         // sentences / ayahs squeezed by the width; short phrases and names keep their one row
         // a long plate line: wrap onto the number of lines that gives the biggest letters
         const LH = 1.5; // line pitch in em (room for Arabic marks above and below)
-        let best = { size, lines: [it.text] };
+        // mark-aware: the pitch each line really needs, in em - measured once (scale-invariant),
+        // so stacked tashkeel gets room by spacing, never by shrinking into oblivion
+        const pitchOf = (l: string): number => {
+          if (!ink) return LH;
+          const m = ink(l, it.font, 10);
+          return Math.max(LH, (m.asc + m.desc) / 10 + 0.12);
+        };
+        let best = { size, lines: [it.text], pitch: ink ? pitchOf(it.text) : LH };
         for (let k = 2; k <= Math.min(10, words.length); k++) {
           const lines = balance(words, k);
-          let s2 = bh / (k * LH);
+          const pitch = ink ? Math.max(...lines.map(pitchOf)) : LH;
+          let s2 = bh / (k * pitch);
           while (s2 > 0.5 && Math.max(...lines.map((l) => measure(l, it.font, s2))) > bw) s2 *= 0.97;
-          if (s2 > best.size * 1.05) best = { size: s2, lines };
+          if (s2 > best.size * 1.05) best = { size: s2, lines, pitch };
         }
         if (best.lines.length > 1) {
-          if (ink) {
-            // mark-aware: shrink the whole block until every wrapped line's full ink fits its slot
-            for (let i = 0; i < 40; i++) {
-              const top0 = cy - (best.lines.length * LH * best.size) / 2;
-              const bad = best.lines.some((l, i2) => {
-                const b = top0 + (i2 * LH + 1) * best.size;
-                const m = ink(l, it.font, best.size);
-                return b - m.asc < top0 + i2 * LH * best.size - 0.05 || b + m.desc > top0 + (i2 + 1) * LH * best.size + 0.05;
-              });
-              if (!bad) break;
-              best.size *= 0.97;
-            }
-          }
-          const top = cy - (best.lines.length * LH * best.size) / 2;
-          best.lines.forEach((l, i) => ops.push({ text: l, font: it.font, cx, baseline: top + (i * LH + 1) * best.size, sizeMm: best.size, role: it.role }));
+          const asc1 = ink ? ink(best.lines[0]!, it.font, best.size).asc / best.size : 1; // first baseline sits under its own marks
+          const top = cy - (best.lines.length * best.pitch * best.size) / 2;
+          best.lines.forEach((l, i) => ops.push({ text: l, font: it.font, cx, baseline: top + (i * best.pitch + (ink ? asc1 : 1)) * best.size, sizeMm: best.size, role: it.role }));
           continue;
         }
       }
