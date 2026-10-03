@@ -822,3 +822,14 @@ details.exp-more .btn { margin-top: 8px }
 
 /* camera button only where there is a camera (touch devices) */
 @media (hover: hover) and (pointer: fine) { .cam-only { display: none } }
+
+/* ---- Learn page + home strips ---- */
+.learn .how { list-style: none; margin: 18px 0; padding: 0; display: grid; gap: 12px; max-width: 640px }
+.learn .how b { display: block; letter-spacing: .08em; color: var(--brass-text); font-size: 13px }
+.learn h2 { margin-top: 34px }
+.learn .faq { max-width: 640px } .learn .faq dt { font-weight: 700; margin-top: 14px } .learn .faq dd { margin: 4px 0 0; color: var(--mute) }
+.strip { margin: 26px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card) }
+.arabic-strip { display: grid; grid-template-columns: 180px 1fr; gap: 16px; align-items: center }
+.arabic-strip img { width: 100%; height: auto; border-radius: var(--r-sm) }
+.arabic-strip h2 { margin: 0 0 6px; font-size: 18px }
+@media (max-width: 600px) { .arabic-strip { grid-template-columns: 1fr } }

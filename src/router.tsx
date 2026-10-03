@@ -84,6 +84,7 @@ export type Route =
   | { page: "create" }
   | { page: "projects" }
   | { page: "settings" }
+  | { page: "learn" }
   | { page: "workspace"; workflow: Workflow }
   | { page: "project"; id: string }
   | { page: "missing" };
@@ -93,6 +94,7 @@ export function matchRoute(path: string): Route {
   if (path === "/create") return { page: "create" };
   if (path === "/projects") return { page: "projects" };
   if (path === "/settings") return { page: "settings" };
+  if (path === "/learn") return { page: "learn" };
   for (const w of ["image", "text", "names99", "pattern", "trace", "depth"] as const) if (path === WORKFLOW_PATH[w]) return { page: "workspace", workflow: w };
   const p = /^\/project\/([\w-]{1,64})$/.exec(path);
   if (p) return { page: "project", id: p[1]! };

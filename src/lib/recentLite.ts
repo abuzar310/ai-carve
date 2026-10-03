@@ -26,7 +26,7 @@ export function ago(at: number, now: number): string {
   return d === 1 ? "yesterday" : `${d} days ago`;
 }
 
-export type RecentRow = { at: number; title: string; kind: "names99" | "pattern" | "text"; widthMm: number; heightMm: number; rtl: boolean };
+export type RecentRow = { at: number; title: string; kind: "names99" | "pattern" | "text"; widthMm: number; heightMm: number; rtl: boolean; named: boolean };
 
 /** Read the stored list defensively: anything odd is skipped, never thrown. */
 export function recentRows(raw: string | null): RecentRow[] {
@@ -42,11 +42,13 @@ export function recentRows(raw: string | null): RecentRow[] {
       const lines = Array.isArray(s.lines) ? s.lines.filter((l): l is string => typeof l === "string") : [];
       const template = typeof s.template === "string" ? s.template : "plate";
       const header = typeof s.header === "string" ? s.header : "";
-      const title = recentTitle({ lines, template: template as PanelSpec["template"], header });
+      const given = typeof (r as { name?: unknown }).name === "string" && (r as { name: string }).name.trim() ? (r as { name: string }).name.trim() : "";
+      const title = given || recentTitle({ lines, template: template as PanelSpec["template"], header });
       const num = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : 0);
       rows.push({
         at,
         title,
+        named: !!given,
         kind: template === "names99" ? "names99" : template === "pattern" ? "pattern" : "text",
         widthMm: num(s.widthMm),
         heightMm: num(s.heightMm),
@@ -66,6 +68,26 @@ export function removeRecent(raw: string | null, at: number): string {
     return JSON.stringify(Array.isArray(v) ? v.filter((r) => !(r && typeof r === "object" && (r as { at?: unknown }).at === at)) : []);
   } catch {
     return "[]";
+  }
+}
+
+/** Give the entry stamped `at` a name of its own (empty name returns to the derived title). */
+export function renameRecent(raw: string | null, at: number, name: string): string | null {
+  try {
+    const v = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(v)) return null;
+    let hit = false;
+    const next = v.map((r) => {
+      if (r && typeof r === "object" && (r as { at?: unknown }).at === at) {
+        hit = true;
+        const { name: _drop, ...rest } = r as Record<string, unknown>;
+        return name.trim() ? { ...rest, name: name.trim() } : rest;
+      }
+      return r;
+    });
+    return hit ? JSON.stringify(next) : null;
+  } catch {
+    return null;
   }
 }
 

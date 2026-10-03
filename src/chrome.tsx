@@ -1,12 +1,13 @@
 /** Site chrome shared by every page: brand, top navigation, phone bottom navigation, footer. */
 import { Link } from "./router";
 
-export type Section = "home" | "create" | "projects" | "settings";
+export type Section = "home" | "create" | "projects" | "settings" | "learn";
 
 const NAV: { id: Section; label: string; to: string }[] = [
   { id: "home", label: "Home", to: "/" },
   { id: "create", label: "Create", to: "/create" },
   { id: "projects", label: "Projects", to: "/projects" },
+  { id: "learn", label: "Learn", to: "/learn" },
   { id: "settings", label: "Settings", to: "/settings" },
 ];
 
@@ -57,6 +58,9 @@ export function BottomNav({ at }: { at: Section | null }) {
 export function SiteFooter() {
   return (
     <footer className="foot">
+      <p>
+        <Link to="/learn">How AI Carve works</Link>
+      </p>
       <div className="foot-brand">
         <p className="kicker">AI Carve</p>
         <p className="foot-line">Photo, text or pattern to 3D relief, STL, .rlf and vectors</p>

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Link, WORKFLOW_PATH, navigate } from "./router";
 import { WORKFLOWS, type WorkflowCard } from "./workflows";
-import { RECENT_KEY, ago, duplicateRecent, recentRows, removeRecent, type RecentRow } from "./lib/recentLite";
+import { RECENT_KEY, ago, duplicateRecent, recentRows, removeRecent, renameRecent, type RecentRow } from "./lib/recentLite";
 import { MATERIALS } from "./lib/material";
 import { QUALITY_PREFS, clearKey, readMaterial, readQuality, readRaw, writeMaterial, writeQuality, PREFS_EVENT, type QualityPref } from "./lib/prefs";
 
@@ -54,6 +54,16 @@ function RecentList({ rows, limit, actions }: { rows: RecentRow[]; limit?: numbe
               </button>
               <button
                 type="button"
+                className="linkish"
+                onClick={() => {
+                  const name = window.prompt("Project name (leave empty to use the design’s own title):", r.named ? r.title : "");
+                  if (name !== null) changeRecent(renameRecent(readRaw(RECENT_KEY), r.at, name));
+                }}
+              >
+                Rename
+              </button>
+              <button
+                type="button"
                 className="linkish danger"
                 onClick={() => {
                   if (window.confirm(`Delete “${r.title}”? This cannot be undone.`)) changeRecent(removeRecent(readRaw(RECENT_KEY), r.at));
@@ -66,6 +76,63 @@ function RecentList({ rows, limit, actions }: { rows: RecentRow[]; limit?: numbe
         </li>
       ))}
     </ul>
+  );
+}
+
+
+/** /learn — what AI Carve does and how, in plain words. Static: no engine, no model. */
+export function LearnPage() {
+  return (
+    <main id="main" className="page learn">
+      <h1>How AI Carve works</h1>
+      <p className="lede">From a picture or a text to a file your CNC machine can carve, in five steps.</p>
+      <ol className="how">
+        <li><b>01 Start</b> Upload, drag, paste or photograph a picture — or pick a text design: names, Quran verses, the 99 Names, star patterns.</li>
+        <li><b>02 Shape</b> Photos become depth with an AI model (or your own height map, no AI). Text is typeset exactly from real Arabic fonts — never drawn by an image model.</li>
+        <li><b>03 Size</b> Width, height, relief depth and base, all in millimetres. Width and height follow the picture’s proportions.</li>
+        <li><b>04 Inspect</b> Turn the 3D relief, check it in wood or stone preview, read the verification list: a tick only appears when code just checked it.</li>
+        <li><b>05 Export</b> STL for any CNC software, ArtCAM .rlf, 16-bit TIFF, vectors as DXF and SVG, and a proof image.</li>
+      </ol>
+      <h2>Exact Arabic. Not AI-generated glyphs.</h2>
+      <p>
+        Arabic here never comes from an image model guessing at letterforms. Every word is verified Unicode from the Quran library or vetted
+        lists, rendered through real Arabic fonts into geometry. The 99 Names panel is checked against the library on every change —
+        100 of 100 words, in reading order, nothing repeated — and a black-on-white proof shows the exact lettering before you carve.
+      </p>
+      <p>
+        <Link className="btn pri" to={WORKFLOW_PATH.names99}>Open the 99 Names panel</Link>
+      </p>
+      <h2>Files you get</h2>
+      <p>
+        <b>CNC &amp; 3D:</b> STL (every CNC program and slicer) · ArtCAM relief .rlf · 16-bit TIFF height map at 0.25 mm.
+        <br />
+        <b>Vectors:</b> DXF and SVG with letters, pattern lines and the cut outline on separate layers.
+        <br />
+        <b>Checking:</b> proof PNG and height BMP.
+      </p>
+      <p className="meta">
+        All values are millimetres. An STL file itself carries no unit — AI Carve writes millimetre values and the export panel says so,
+        so set your CNC software to mm when importing.
+      </p>
+      <h2>Common questions</h2>
+      <dl className="faq">
+        <dt>Is it free?</dt>
+        <dd>Yes. Building and every export are free.</dd>
+        <dt>Where do my pictures go?</dt>
+        <dd>Nowhere. The relief is built in your browser; pictures are not uploaded to a server.</dd>
+        <dt>Does it work with ArtCAM, Aspire or Carveco?</dt>
+        <dd>Yes — open the STL, or use the native .rlf and 16-bit TIFF exports made at 0.25 mm detail.</dd>
+        <dt>Can I 3D-print a panel?</dt>
+        <dd>Yes: give it a base thickness in the Size step so the mesh is a closed solid, then print the STL.</dd>
+        <dt>Where are my projects saved?</dt>
+        <dd>In this browser. The last 12 text and pattern panels appear under Projects; photo reliefs are not saved yet.</dd>
+        <dt>Which picture works best?</dt>
+        <dd>A sharp, evenly lit photo of a carving or artwork. JPG, PNG, WebP or BMP — drag and drop or paste works too.</dd>
+      </dl>
+      <p>
+        <Link className="btn pri" to="/create">Start a project</Link>
+      </p>
+    </main>
   );
 }
 
@@ -110,6 +177,24 @@ export function HomePage() {
         </Link>
       </section>
 
+      <section className="strip" aria-label="How it works">
+        <p className="meta">
+          <b>How it works:</b> start from a picture or a text · shape the relief · size it in millimetres · inspect in 3D · export
+          CNC files. <Link to="/learn">The five steps, explained</Link>.
+        </p>
+      </section>
+      <section className="strip arabic-strip" aria-label="Exact Arabic">
+        <img src="/examples/ex-name.webp" alt="Carved name plaque with flower corners" width={480} height={300} loading="lazy" decoding="async" />
+        <div>
+          <h2>Exact Arabic. Not AI-generated glyphs.</h2>
+          <p className="meta">
+            Verified Unicode, real Arabic fonts, and a 99 Names panel checked 100 of 100 against the library on every change — with a
+            proof of the exact lettering before you carve. <Link to={WORKFLOW_PATH.names99}>Open 99 Names</Link>
+          </p>
+        </div>
+      </section>
+
+
       <section className="block" aria-labelledby="start-title">
         <h2 id="start-title">Start a project</h2>
         <ul className="wf-grid">
@@ -122,7 +207,7 @@ export function HomePage() {
       {rows.length ? (
         <section className="block" aria-labelledby="recent-title">
           <div className="block-head">
-            <h2 id="recent-title">Recent</h2>
+      <h2 id="recent-title">Recent</h2>
             <Link to="/projects" className="linkish">
               All projects
             </Link>

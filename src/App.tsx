@@ -10,7 +10,7 @@ import { FULL_TOPOLOGY_TRIS, stlBytesEstimate, validateMesh, validateMeshQuick, 
 import { reliefBmp } from "./lib/bmp";
 import { reliefRlf } from "./lib/rlf";
 import { reliefTif } from "./lib/tif";
-import { DEFAULT_SPEC, composePanel, gridFor, layoutPanel, missingText, restoreSpec, sizeProblem, type PanelSpec } from "./lib/textPanel";
+import { NAMES_99, DEFAULT_SPEC, composePanel, gridFor, layoutPanel, missingText, restoreSpec, sizeProblem, type PanelSpec } from "./lib/textPanel";
 import { proofPng, rasterPanel } from "./lib/textRaster";
 import { outlineDxf } from "./lib/dxf";
 import { shapeContour } from "./lib/shape";
@@ -562,6 +562,14 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     if (verdict && !verdict.ok) {
       setErr(verdict.errors[0] || "This relief did not pass the solid check, so the STL was not saved.");
       return;
+    }
+    const bs = builtSpec ?? textSpec;
+    if (raw.exact && bs.template === "names99") {
+      const placed = layoutPanel(bs).items.filter((i) => i.role !== "header").map((i) => i.text);
+      if (!(placed.length === NAMES_99.length && placed.every((t, i) => t === NAMES_99[i]))) {
+        setErr("The 99 Names did not verify against the library, so nothing was exported. Open the checklist above the exports, fix the design, and rebuild.");
+        return;
+      }
     }
     const tris = triangleEstimate(raw.cols, raw.rows, isSurfaceOnly(board.baseMm));
     const mb = stlBytesEstimate(tris) / 1e6;

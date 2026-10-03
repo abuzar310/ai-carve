@@ -59,6 +59,7 @@ if (want(2)) {
     ["/create", /What would you like to make/],
     ["/projects", /^Projects$/],
     ["/settings", /^Settings$/],
+    ["/learn", /How AI Carve works/],
     ["/no-such-page-xyz", /Page not found/],
   ];
   for (const [route, heading] of ROUTES) {
@@ -254,6 +255,26 @@ if (want(13)) {
   check((await p.locator('.ws-steps button[aria-current="step"]').innerText().catch(() => "")).includes("Size"), "Ctrl+V paste loads the picture");
   check(!p.errors.length, `image input options without errors ${p.errors.join(" | ")}`);
   await p.context().close();
+}
+
+// 14. Learn page + Home positioning strips + project Rename (brief sections 3-6, 11)
+if (want(14)) {
+  const p = await page(browser);
+  await p.goto(BASE + "/learn"); await p.waitForTimeout(700);
+  check(await p.getByRole("heading", { name: /Exact Arabic/ }).isVisible() && (await p.locator(".faq dt").count()) >= 6, "Learn: exact-Arabic section and FAQ");
+  check(await p.locator('nav.nav a[aria-current="page"]', { hasText: "Learn" }).isVisible(), "Learn active in the top nav");
+  await p.goto(BASE + "/"); await p.waitForTimeout(800);
+  check((await p.locator(".arabic-strip").count()) === 1, "Home carries the exact-Arabic strip");
+  check(!p.errors.length, `learn/home without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+  const ctx = await browser.newContext();
+  await ctx.addInitScript(() => { localStorage.setItem("carve.recent.v1", JSON.stringify([{ spec: { lines: ["Salam"], template: "plate", header: "", widthMm: 300, heightMm: 120 }, at: 4242 }])); });
+  const p2 = await ctx.newPage();
+  p2.on("dialog", (d) => d.accept("Majlis door"));
+  await p2.goto(BASE + "/projects"); await p2.waitForTimeout(700);
+  await p2.locator(".recent-acts .linkish", { hasText: "Rename" }).first().click(); await p2.waitForTimeout(400);
+  check((await p2.locator(".recent-title").first().innerText()).includes("Majlis door"), "project Rename updates the shown title");
+  await ctx.close();
 }
 
 await browser.close();

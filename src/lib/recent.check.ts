@@ -1,5 +1,5 @@
 import { RECENT_MAX, addRecent, ago, parseRecent, recentTitle } from "./recent";
-import { duplicateRecent, removeRecent } from "./recentLite.ts";
+import { duplicateRecent, removeRecent, renameRecent } from "./recentLite.ts";
 import { recentRows } from "./recentLite";
 import { DEFAULT_SPEC } from "./textPanel";
 
@@ -55,5 +55,13 @@ ok(ago(0, 30_000) === "just now" && ago(0, 5 * 60_000) === "5 min ago" && ago(0,
   ok(duplicateRecent(raw, 999, 3000) === null && duplicateRecent("{bad", 1, 2) === null, "duplicateRecent: missing or garbage is null");
   const many = JSON.stringify(Array.from({ length: 12 }, (_, i) => ({ spec: { lines: ["x"], template: "plate", header: "" }, at: i + 1 })));
   ok(JSON.parse(duplicateRecent(many, 1, 99)!).length === 12, "duplicateRecent keeps the cap of 12");
+}
+{
+  const raw = JSON.stringify([{ spec: { lines: ["a"], template: "plate", header: "", widthMm: 100, heightMm: 100 }, at: 7 }]);
+  const named = renameRecent(raw, 7, "  Majlis door  ")!;
+  ok(recentRows(named)[0]!.title === "Majlis door" && recentRows(named)[0]!.named, "renameRecent sets the shown title");
+  const back = renameRecent(named, 7, "")!;
+  ok(!recentRows(back)[0]!.named, "empty name returns to the derived title");
+  ok(renameRecent(raw, 99, "x") === null && renameRecent("{bad", 7, "x") === null, "renameRecent: missing or garbage is null");
 }
 console.log(`carve recent.check OK (${n} assertions)`);
