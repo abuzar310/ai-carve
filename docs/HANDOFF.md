@@ -58,6 +58,17 @@ band sizes); the collision is real on the carved piece. Guard shipped: rasterPan
 line's FULL ink (marks included) and returns tightLines + inkRatio; the export verification shows
 'touching vowel marks' in red with the fix choices. A root redesign (mark-aware caps / line pitch)
 would change approved designs' look - owner's call, see UX_REBUILD open items.
+Bug-hunt loop status (3 Oct, end of session): pass 1 complete. FIXED P1 stale text exports +
+P1 drift-blind verification line (exportBlock() at the shared boundary; smoke 15). Input
+exclusivity PROVEN deterministic (synchronous busyRef claim; smoke 16: same-frame double
+paste -> first wins, second gets the note). Dblclick STL: tested, not a bug. Suite now 16
+browser sections + 24 unit files, all green on the shipping build. NEXT SESSION, in order:
+(1) bug-hunt pass 2: chaos matrix (rapid clicks, nav-during-build, refresh mid-op), the
+invalid/extreme-input grid, perf pass; (2) Phase 4 dedicated Pattern Builder; (3) IndexedDB
+project persistence; (4) 13-design Quran typography sweep (method below) then the mark-aware
+default decision; (5) Four Quls box-overlap layout fix; (6) formal accessibility pass.
+START NEXT CHAT with a FRESH repo-only token - the ones used so far are burned and must be
+revoked (GitHub all-repos PAT + a Vercel vcp token were pasted in chat).
 Production-hardening brief status (3 Oct): Phases 1-3 DONE (state verified; 99/99 semantics via
 shared compareNames99/verifyNames99 with Allah as a structural line; every carving export guarded
 at save time, proof deliberately open, no cached verified flag anywhere). Phase 8 audience line and

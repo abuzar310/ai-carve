@@ -301,6 +301,26 @@ if (want(15)) {
   await ctx.close();
 }
 
+// 16. REGRESSION (input exclusivity): two paste events in the same frame start ONE pipeline.
+// The synchronous busyRef claim must turn the second away, deterministically.
+if (want(16)) {
+  const p = await page(browser);
+  p.errors = []; p.on("pageerror", (e) => p.errors.push(e.message));
+  await p.goto(BASE + "/create/image"); await p.waitForTimeout(900);
+  await p.evaluate(async () => {
+    const mk = async (u, n) => { const r = await fetch(u); const f = new File([await r.blob()], n, { type: "image/jpeg" }); const dt = new DataTransfer(); dt.items.add(f); return new ClipboardEvent("paste", { clipboardData: dt }); };
+    const a = await mk("/examples/carving.jpg", "first.jpg");
+    const b = await mk("/examples/ex-name.webp", "second.webp");
+    window.dispatchEvent(a); window.dispatchEvent(b); // same frame, zero gap
+  });
+  await p.waitForTimeout(1500);
+  const meta = (await p.locator("aside.source").innerText().catch(() => "")).replace(/\s+/g, " ");
+  check(meta.includes("first.jpg") && !meta.includes("second.webp"), `same-frame double paste: first wins, second turned away (${meta.slice(0, 40)})`);
+  check((await p.getByText(/Hold on/).count()) > 0, "the second paste gets the hold-on note");
+  check(!p.errors.length, `input exclusivity without errors ${p.errors.join(" | ")}`);
+  await p.context().close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);
