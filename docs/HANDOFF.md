@@ -93,6 +93,14 @@ expire while the page was busy). FIXED photo sizes accepted 1e300 mm (non-finite
 3000 mm sides (proportional), 500 mm depth/base. CLEAN: non-image, empty, truncated JPEG, 1 px,
 9000 px, SVG, GIF. Smoke 18 locks it. Section 10 timing drift (5->16 s) was the sandbox: old and new
 builds interleaved time identically.
+CUSTOM DESIGNS (6-7 Oct): designs/99-names-kaaba-framed-72x43in/ - a 72x43 in customer panel (Allah + 99
+Names from NAMES_99 in Amiri, Kaaba relief, carved frame), finished STL + 16-bit height map + preview.
+Built by an offline Python generator that was LOST in a sandbox reset (folder README says what it did).
+LESSON (P1, caught before carving): binary STL header MUST be exactly 80 bytes - a description longer
+than 80 shifted every triangle 4-6 bytes (CAM reads ~1.8e9 triangles); and float32 rounding on write
+collapsed 28-40 triangles into lines. Always run the mesh checks on the WRITTEN FILE, never the
+in-memory mesh. Large binaries: GitHub releases once the account is linked to the session (API was
+blocked by the session proxy on 7 Oct, so this zip is committed).
 START NEXT CHAT with a FRESH repo-only token - the ones used so far are burned and must be
 revoked (GitHub all-repos PAT + a Vercel vcp token were pasted in chat).
 Production-hardening brief status (3 Oct): Phases 1-3 DONE (state verified; 99/99 semantics via
