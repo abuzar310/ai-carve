@@ -85,6 +85,14 @@ PERF LEDGER (for the perf pass): first photo build freezes the page ~17 s (progr
 "Downloading relief model 100%"): inference runs on the main thread - try ORT wasm proxy (worker).
 Minor: Image "Reset settings" sets quality High, ignoring the Settings default (newProject uses
 readQuality()). Suite: 17 browser sections + 24 unit files.
+Bug-hunt pass 2, chunk 2 (input grid): FIXED a 4000x24 px strip planned 171 depth runs on the main
+thread (minutes frozen) - planTiles caps at MAX_TILES=12 (up to a 1:12 leg unchanged). FIXED a fully
+transparent / one-colour picture got a shape invented by the depth model with green checks - flat
+pictures skip the model, carve flat, warning in the result bar on every step (the 6 s note could
+expire while the page was busy). FIXED photo sizes accepted 1e300 mm (non-finite STL) - PHOTO_MAX
+3000 mm sides (proportional), 500 mm depth/base. CLEAN: non-image, empty, truncated JPEG, 1 px,
+9000 px, SVG, GIF. Smoke 18 locks it. Section 10 timing drift (5->16 s) was the sandbox: old and new
+builds interleaved time identically.
 START NEXT CHAT with a FRESH repo-only token - the ones used so far are burned and must be
 revoked (GitHub all-repos PAT + a Vercel vcp token were pasted in chat).
 Production-hardening brief status (3 Oct): Phases 1-3 DONE (state verified; 99/99 semantics via

@@ -122,6 +122,9 @@ type Props = {
   recent: string | null;
 };
 
+/** Largest photo-relief sizes the inputs accept, in mm (sides match the text panel's limit). */
+const PHOTO_MAX = { widthMm: 3000, heightMm: 3000, depthMm: 500, baseMm: 500 } as const;
+
 export default function App({ workflow, navKey, example, recent }: Props) {
   const [prompt, setPrompt] = useState("Peacock on a teak panel, side view, deep carved feathers");
   const [pic, setPic] = useState("");
@@ -288,6 +291,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     }
     lastImg.current = img;
     setTraceImg(img);
+    let flat = false;
     {
       // a picture that is nearly one colour carves as a nearly flat board
       const h = next.height;
@@ -298,12 +302,15 @@ export default function App({ workflow, navKey, example, recent }: Props) {
         sq += (h[i] ?? 0) ** 2;
       }
       const mean = sum / h.length;
-      setFlatPic(Math.sqrt(Math.max(0, sq / h.length - mean * mean)) < 0.02);
+      flat = Math.sqrt(Math.max(0, sq / h.length - mean * mean)) < 0.02;
+      setFlatPic(flat);
     }
     // A turned leg takes its shape from the outline, so the depth model is skipped
     // (it is estimated later only if the user switches turned mode off).
-    const needDepth = !(kind === "leg" && turned) && workflow !== "depth";
-    let dep: Float32Array | null | undefined;
+    const needDepth = !flat && !(kind === "leg" && turned) && workflow !== "depth";
+    // A flat picture (one colour, fully transparent) has nothing to carve: the depth model would invent a
+    // shape that is not in it. null, not undefined, so the turned-mode effect never estimates it later.
+    let dep: Float32Array | null | undefined = flat ? null : undefined;
     if (needDepth) {
       dep = await estimateDepth(img, iw, ih, next.cols, next.rows, status, () => isCurrent(job));
       if (!isCurrent(job)) return;
@@ -697,9 +704,15 @@ export default function App({ workflow, navKey, example, recent }: Props) {
     if (!imgSize) return setNum(key, rawVal);
     const r = imgSize.h / imgSize.w;
     const round = (v: number) => Math.max(1, Math.round(v * 2) / 2);
-    setBoard((b) =>
-      key === "widthMm" ? { ...b, widthMm: n, heightMm: round(n * r) } : { ...b, heightMm: n, widthMm: round(n / r) },
-    );
+    let w = key === "widthMm" ? n : round(n / r);
+    let h = key === "heightMm" ? n : round(n * r);
+    const over = Math.max(w, h) / PHOTO_MAX.widthMm;
+    if (over > 1) {
+      // keep the picture's proportions: both sides come down together
+      w = round(w / over);
+      h = round(h / over);
+    }
+    setBoard((b) => ({ ...b, widthMm: w, heightMm: h }));
   }
 
   function choosePiece(p: Piece) {
@@ -710,7 +723,8 @@ export default function App({ workflow, navKey, example, recent }: Props) {
   function setNum(key: keyof typeof board, rawVal: string) {
     const n = Number(rawVal);
     if (!Number.isFinite(n) || n < 0 || (n === 0 && key !== "baseMm")) return;
-    setBoard((b) => ({ ...b, [key]: n }));
+    // an upper bound: 1e300 mm is a finite number but no STL can hold it (float32 overflows to Infinity)
+    setBoard((b) => ({ ...b, [key]: Math.min(n, PHOTO_MAX[key]) }));
   }
 
   function pickFile() {
@@ -1251,6 +1265,11 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                   New project
                 </button>
               </p>
+              {mode === "photo" && flatPic ? (
+                <p className="meta warn" role="note">
+                  This picture is almost one flat colour, so it carves as a flat board. Use a picture with clear light and dark areas.
+                </p>
+              ) : null}
             </div>
             <div className="result-acts">
               <button type="button" className="btn ghost" disabled={!!busy} onClick={() => void regenerate()}>
@@ -1477,7 +1496,7 @@ export default function App({ workflow, navKey, example, recent }: Props) {
                 </p>
                 {flatPic ? (
                   <p className="meta warn" role="note">
-                    This picture is almost one flat colour, so the relief will be nearly flat. Use a picture with clear light and dark areas.
+                    This picture is almost one flat colour, so it carves as a flat board. Use a picture with clear light and dark areas.
                   </p>
                 ) : null}
                 {fileMeta?.w && Math.max(fileMeta.w, fileMeta.h) < 500 ? (

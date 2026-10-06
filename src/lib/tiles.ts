@@ -11,14 +11,23 @@
 export type Tile = { x: number; y: number; w: number; h: number };
 
 /** Tiles in grid cells covering cols × rows. One tile when the picture is not long. */
-export function planTiles(cols: number, rows: number, maxAspect = 1.6, overlap = 0.3): Tile[] {
+/** Each tile is one model run on the main thread: past a 1:12 picture, tiles get longer instead of more
+ *  numerous. Uncapped, a 4000 × 24 px strip planned 171 runs and froze the page for minutes. */
+export const MAX_TILES = 12;
+
+export function planTiles(cols: number, rows: number, maxAspect = 1.6, overlap = 0.3, maxTiles = MAX_TILES): Tile[] {
   const tall = rows >= cols;
   const long = tall ? rows : cols;
   const short = tall ? cols : rows;
   if (long <= short * maxAspect) return [{ x: 0, y: 0, w: cols, h: rows }];
-  const len = Math.min(long, Math.round(short * 1.5));
+  let len = Math.min(long, Math.round(short * 1.5));
   const step = Math.max(1, Math.floor(len * (1 - overlap)));
-  const count = Math.ceil((long - len) / step) + 1;
+  let count = Math.ceil((long - len) / step) + 1;
+  if (count > maxTiles) {
+    // the fewest tiles that still cover the length with the same overlap
+    count = maxTiles;
+    len = Math.min(long, Math.ceil(long / (1 + (count - 1) * (1 - overlap))));
+  }
   const tiles: Tile[] = [];
   for (let k = 0; k < count; k++) {
     const at = count === 1 ? 0 : Math.round(((long - len) * k) / (count - 1));

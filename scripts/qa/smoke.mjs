@@ -362,6 +362,44 @@ if (want(17)) {
   await q.context().close();
 }
 
+// 18. REGRESSION (bug hunt pass 2, input grid): extreme pictures and sizes.
+// (a) a 4000 x 24 px strip planned 171 depth runs and froze the page for minutes: now capped at 12 tiles;
+// (b) a fully transparent picture got a shape invented by the depth model: now a flat board, said so on every step;
+// (c) a width of 1e300 mm was accepted and only failed as "non-finite coordinates": now clamped to 3000 mm.
+if (want(18)) {
+  const pngs = async (p) => p.evaluate(() => {
+    const mk = (w, h, paint) => { const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); paint(g); return new Promise((r) => c.toBlob((b) => r(b), "image/png")); };
+    return Promise.all([
+      mk(4000, 24, (g) => { for (let x = 0; x < 4000; x += 40) { g.fillStyle = x % 80 ? "#c9a" : "#635"; g.fillRect(x, 0, 40, 24); } }),
+      mk(400, 300, () => {}), // fully transparent
+    ]).then(async (bs) => Promise.all(bs.map(async (b) => Array.from(new Uint8Array(await b.arrayBuffer())))));
+  });
+  const p = await page(browser);
+  await p.goto(BASE + "/create/image"); await p.waitForTimeout(900);
+  const [strip, clear] = await pngs(p);
+  const put = (bytes, name) => p.setInputFiles('input[name="source_image"]', { name, mimeType: "image/png", buffer: Buffer.from(bytes) });
+  const t0 = Date.now();
+  await put(strip, "strip.png");
+  check(await ready(p, 40), `extreme 4000 x 24 strip builds (${Math.round((Date.now() - t0) / 1000)} s; capped depth tiles)`);
+  await p.context().close();
+
+  const q = await page(browser);
+  const stages = [];
+  await q.goto(BASE + "/create/image"); await q.waitForTimeout(900);
+  await q.exposeFunction("__stage", (s) => stages.push(s));
+  await q.evaluate(() => new MutationObserver(() => { const v = document.querySelector(".veil strong")?.textContent; if (v) window.__stage(v); }).observe(document.body, { subtree: true, childList: true, characterData: true }));
+  await q.setInputFiles('input[name="source_image"]', { name: "clear.png", mimeType: "image/png", buffer: Buffer.from(clear) });
+  check(await ready(q, 30), "fully transparent picture builds");
+  check(!stages.some((s) => /depth/i.test(s) && /Estimating|Downloading/i.test(s)), `the depth model is not run on an empty picture (${[...new Set(stages)].join(", ").slice(0, 80)})`);
+  check(await q.locator(".result-bar .warn", { hasText: /flat board/ }).isVisible(), "the flat-board warning shows with the result, on any step");
+  await q.click('.ws-steps button:has-text("Size")');
+  const w = q.locator('input[name="width-mm"]'); await w.fill("1e300"); await w.dispatchEvent("change"); await q.waitForTimeout(1200);
+  check((await q.locator(".info").innerText()).includes("3000 ×"), `a 1e300 mm width is clamped (${(await q.locator(".info").innerText()).trim()})`);
+  check((await q.locator(".exp-checks li.fail", { hasText: /non-finite/ }).count()) === 0 && (await q.locator(".exp-checks li.pass", { hasText: /valid solid/ }).count()) === 1, "the clamped mesh is still a valid solid");
+  check(!q.errors.length, `input grid without errors ${q.errors.join(" | ")}`);
+  await q.context().close();
+}
+
 await browser.close();
 console.log(fails.length ? `\n${fails.length} FAILED` : "\nall smoke checks passed");
 process.exit(fails.length ? 1 : 0);

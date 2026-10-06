@@ -13,6 +13,11 @@ ok(legPlan.length >= 8, `1:12 leg is tiled (${legPlan.length})`);
 ok(legPlan.every((t) => t.w === 103 && t.h <= 155), "leg tiles are full width, ~1.5× tall");
 ok(legPlan[0]!.y === 0 && legPlan.at(-1)!.y + legPlan.at(-1)!.h === 1280, "tiles cover the whole length");
 for (let k = 1; k < legPlan.length; k++) ok(legPlan[k]!.y < legPlan[k - 1]!.y + legPlan[k - 1]!.h, "tiles overlap");
+const sliver = planTiles(1024, 6); // a 4000 × 24 px strip: once 171 model runs on the main thread
+ok(sliver.length === 12, `extreme strip is capped at 12 tiles (${sliver.length})`);
+ok(sliver[0]!.x === 0 && sliver.at(-1)!.x + sliver.at(-1)!.w === 1024 && sliver.every((t) => t.h === 6), "capped tiles still cover the whole length");
+for (let k = 1; k < sliver.length; k++) ok(sliver[k]!.x < sliver[k - 1]!.x + sliver[k - 1]!.w, "capped tiles still overlap");
+ok(planTiles(103, 1280).length === legPlan.length, "a 1:12 leg is under the cap: planned as before");
 const strip = planTiles(1600, 300);
 ok(strip.length > 1 && strip.every((t) => t.h === 300), "wide strip tiles along x");
 
